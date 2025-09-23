@@ -1,0 +1,38 @@
+:version 1.10
+:units
+  mass 1.0
+  length 0.45
+  angle deg
+:root
+   order TX TY TZ RX RY RZ
+   axis XYZ
+   position 0 0 0  
+   orientation 0 0 0 
+:bonedata
+  begin
+     id 1
+     name bone1
+     direction 0.57735027  0.57735027  0.57735027
+     length 5
+     axis 0 0 0   XYZ
+  end
+  begin
+     id 2
+     name bone2
+     direction 1 0 0
+     length 3
+     axis -90 0 45   XYZ
+  end
+  begin
+     id 3
+     name bone3
+     direction 0 1 0
+     length 4
+     axis -90 0 45   XYZ
+  end
+:hierarchy
+  begin
+    root bone1
+    bone1 bone2
+    bone1 bone3
+  end
