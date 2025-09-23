@@ -7,5 +7,8 @@ team11
 
 ### How to run
 mkdir build
+
 cd build
+
 cmake ../work
+
