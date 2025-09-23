@@ -1,0 +1,22 @@
+:version 1.10
+:units
+  mass 1.0
+  length 0.45
+  angle deg
+:root
+   order TX TY TZ RX RY RZ
+   axis XYZ
+   position 0 0 0  
+   orientation 0 0 0 
+:bonedata
+  begin
+     id 1 
+     name test_bone
+     direction 0.57735027  0.57735027  0.57735027
+     length 5
+     axis 0 0 0  XYZ
+  end
+:hierarchy
+  begin
+    root test_bone
+  end
