@@ -38,9 +38,6 @@ private:
 	float m_ambientTemp = 20.0f;
 	float m_heaterTemp = 80.0f;
 
-	// Time scaling (animation speed multiplier � 1.0 = real time)
-	float m_timeScale = 1.0f;
-
 	// Metaball parameters
 	float m_threshold = 0.5f;         // Isosurface threshold
 	int m_gridResolution = 32;        // Marching cubes grid resolution (if used)
@@ -90,10 +87,6 @@ public:
 	void setGravity(float g) { m_gravity = g; }
 	void setHeaterTemperature(float t) { m_heaterTemp = t; }
 	void setThreshold(float t) { m_threshold = t; }
-
-	// Animation speed (time scale multiplier)
-	void setTimeScale(float s) { m_timeScale = (s >= 0.0f ? s : 0.0f); }
-	float getTimeScale() const { return m_timeScale; }
 
 	// Add/remove blobs
 	void addBlob(const glm::vec3& position, float radius);

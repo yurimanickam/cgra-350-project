@@ -110,9 +110,6 @@ void Application::initializeLavaLamp() {
 	m_threshold = 0.2f;         // Lower threshold
 	m_heaterTemp = 120.0f;      // increased heater for stronger rise
 	m_gravity = -9.8f;          // fixed gravity (permanent)
-	// m_viscosity intentionally not set: viscosity is now computed per-blob from temperature
-	m_animSpeed = 1.0f;
-	m_lavaLamp.setTimeScale(m_animSpeed);
 
 	// Apply these settings to the lamp (set once)
 	m_lavaLamp.setThreshold(m_threshold);
@@ -518,173 +515,52 @@ void Application::renderLavaLamp(const glm::mat4& view, const glm::mat4& proj) {
 	}
 
 	// -------------------------
-	// DEPTH PRE-PASS (two passes)
-	// -------------------------
-	glBindFramebuffer(GL_FRAMEBUFFER, m_depthFBO);
-	glViewport(0, 0, width, height);
+		// PASS 1: Depth-only pre-pass (metal + glass write depth)
+		// -------------------------
 	glEnable(GL_DEPTH_TEST);
 	glDepthFunc(GL_LESS);
 	glDepthMask(GL_TRUE);
-
-	// Disable color writes
 	glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
 
-	// FRONT faces -> m_depthTextureFront
-	if (m_depthTextureFront != 0) {
-		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, m_depthTextureFront, 0);
-	}
-	else {
-		std::cerr << "Warning: m_depthTextureFront == 0 (front depth texture missing)\n";
-		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, 0, 0);
-	}
-	glDrawBuffer(GL_NONE);
-	glReadBuffer(GL_NONE);
-	glClear(GL_DEPTH_BUFFER_BIT);
-
-	// Cull back faces so we capture front surface depth
-	glEnable(GL_CULL_FACE);
-	glCullFace(GL_BACK);
-
-	glUniform1i(glGetUniformLocation(m_lavaShader, "uRenderMode"), 2); // Metal
+	// Render opaque metal (writes depth)
+	glUniform1i(glGetUniformLocation(m_lavaShader, "uRenderMode"), 2);
 	m_lampMetalMesh.draw();
-	glUniform1i(glGetUniformLocation(m_lavaShader, "uRenderMode"), 0); // Glass
-	m_lampGlassMesh.draw();
 
-	// BACK faces -> m_depthTextureBack
-	if (m_depthTextureBack != 0) {
-		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, m_depthTextureBack, 0);
-	}
-	else {
-		std::cerr << "Warning: m_depthTextureBack == 0 (back depth texture missing)\n";
-		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, 0, 0);
-	}
-	glClear(GL_DEPTH_BUFFER_BIT);
-
-	// Cull front faces so we capture back surface depth
-	glCullFace(GL_FRONT);
-
-	glUniform1i(glGetUniformLocation(m_lavaShader, "uRenderMode"), 2); // Metal
-	m_lampMetalMesh.draw();
-	glUniform1i(glGetUniformLocation(m_lavaShader, "uRenderMode"), 0); // Glass
-	m_lampGlassMesh.draw();
-
-	// Done with depth passes
-	glDisable(GL_CULL_FACE);
+	// -------------------------
+	// PASS 2: Metaball raymarching (reads depth, writes color + depth)
+	// -------------------------
 	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	glDepthFunc(GL_LEQUAL); // Pass if metaball <= existing depth
+	glDepthMask(GL_TRUE);
 
-	// Optionally check completeness once for debugging
-	if (m_depthFBO != 0) {
-		glBindFramebuffer(GL_FRAMEBUFFER, m_depthFBO);
-		GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
-		if (status != GL_FRAMEBUFFER_COMPLETE) {
-			std::cerr << "Depth FBO incomplete: 0x" << std::hex << status << std::dec << "\n";
-		}
-		glBindFramebuffer(GL_FRAMEBUFFER, 0);
-	}
-
-	// Restore viewport
-	glViewport(0, 0, width, height);
-
-	// -------------------------
-	// METABALL PASS (raymarch)
-	// - create a small 1x1 fallback texture once so we never bind texture 0 to a unit
-	// -------------------------
-	static GLuint s_fallbackTex = 0;
-	if (s_fallbackTex == 0) {
-		glGenTextures(1, &s_fallbackTex);
-		glBindTexture(GL_TEXTURE_2D, s_fallbackTex);
-		// make a tiny single-channel float texture with value 1.0 (depth far)
-		float v = 1.0f;
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_R32F, 1, 1, 0, GL_RED, GL_FLOAT, &v);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-		// ensure base/max level set so driver is happy
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
-		glBindTexture(GL_TEXTURE_2D, 0);
-	}
-
-	// Determine which textures are available
-	bool haveFront = (m_depthTextureFront != 0);
-	bool haveBack = (m_depthTextureBack != 0);
-	bool haveBothDepths = haveFront && haveBack;
-
-	// Bind front depth (or fallback) to unit 0, set sampler uniform to 0
-	glActiveTexture(GL_TEXTURE0);
-	if (haveFront) {
-		glBindTexture(GL_TEXTURE_2D, m_depthTextureFront);
-		// ensure sampling returns float not compare
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_NONE);
-	}
-	else {
-		glBindTexture(GL_TEXTURE_2D, s_fallbackTex);
-	}
-	GLint locDepthFront = glGetUniformLocation(m_lavaShader, "uDepthFrontTex");
-	if (locDepthFront != -1) glUniform1i(locDepthFront, 0);
-
-	// Bind back depth (or fallback) to unit 1, set sampler uniform to 1
-	glActiveTexture(GL_TEXTURE1);
-	if (haveBack) {
-		glBindTexture(GL_TEXTURE_2D, m_depthTextureBack);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_NONE);
-	}
-	else {
-		glBindTexture(GL_TEXTURE_2D, s_fallbackTex);
-	}
-	GLint locDepthBack = glGetUniformLocation(m_lavaShader, "uDepthBackTex");
-	if (locDepthBack != -1) glUniform1i(locDepthBack, 1);
-
-	// Tell shader whether real depths are available
-	GLint locHaveDepth = glGetUniformLocation(m_lavaShader, "uHaveDepthTex");
-	if (locHaveDepth != -1) glUniform1i(locHaveDepth, haveBothDepths ? 1 : 0);
-
-	// Fullscreen quad flag
-	GLint locIsFullscreen = glGetUniformLocation(m_lavaShader, "uIsFullscreenQuad");
-	if (locIsFullscreen != -1) glUniform1i(locIsFullscreen, 1);
-
-	// Draw metaballs on fullscreen quad
-	glDisable(GL_DEPTH_TEST); // raymarch will use depth textures for occlusion
-	glEnable(GL_BLEND);
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	glDepthMask(GL_FALSE);
-
-	glUniform1i(glGetUniformLocation(m_lavaShader, "uRenderMode"), 1); // Metaballs
+	glUniform1i(glGetUniformLocation(m_lavaShader, "uRenderMode"), 1);
+	glUniform1i(glGetUniformLocation(m_lavaShader, "uIsFullscreenQuad"), 1);
 	m_fullscreenQuad.draw();
-
-	// cleanup metaball pass state
-	glDepthMask(GL_TRUE);
-	glDisable(GL_BLEND);
-	glEnable(GL_DEPTH_TEST);
-	if (locIsFullscreen != -1) glUniform1i(locIsFullscreen, 0);
-
-	// Unbind the texture units (bind fallback or 0 if you prefer)
-	glActiveTexture(GL_TEXTURE1);
-	glBindTexture(GL_TEXTURE_2D, s_fallbackTex);
-	glActiveTexture(GL_TEXTURE0);
-	glBindTexture(GL_TEXTURE_2D, s_fallbackTex);
+	glUniform1i(glGetUniformLocation(m_lavaShader, "uIsFullscreenQuad"), 0);
 
 	// -------------------------
-	// COLOR PASSES (metal then glass)
+	// PASS 3: Metal color pass (opaque, replaces depth-only metal)
 	// -------------------------
-	glEnable(GL_DEPTH_TEST);
-	glDepthMask(GL_TRUE);
-	glDisable(GL_BLEND);
+	glDepthFunc(GL_LEQUAL); // Draw over existing metal depth
+	glDepthMask(GL_FALSE); // Don't modify depth
 
-	glUniform1i(glGetUniformLocation(m_lavaShader, "uRenderMode"), 2); // Metal
+	glUniform1i(glGetUniformLocation(m_lavaShader, "uRenderMode"), 2);
 	m_lampMetalMesh.draw();
 
+	// -------------------------
+	// PASS 4: Glass color pass (transparent blending)
+	// -------------------------
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 	glDepthMask(GL_FALSE);
+	glDepthFunc(GL_LEQUAL);
 
-	glUniform1i(glGetUniformLocation(m_lavaShader, "uRenderMode"), 0); // Glass
+	glUniform1i(glGetUniformLocation(m_lavaShader, "uRenderMode"), 0);
 	m_lampGlassMesh.draw();
 
 	// Restore state
 	glDepthMask(GL_TRUE);
+	glDepthFunc(GL_LESS);
 	glDisable(GL_BLEND);
 }
 
@@ -747,13 +623,6 @@ void Application::renderGUI() {
 	ImGui::Text("Lava Lamp Controls");
 	ImGui::Checkbox("Show Lava Lamp", &m_showLavaLamp);
 	ImGui::Checkbox("Animate", &m_animateLamp);
-
-	// Animation speed replaces the old viscosity UI (viscosity is now temperature-driven)
-	if (ImGui::SliderFloat("Animation Speed", &m_animSpeed, 0.1f, 4.0f, "%.2f")) {
-		// set the simulator time scale (1.0 = real time)
-		m_lavaLamp.setTimeScale(m_animSpeed);
-	}
-	ImGui::Text("Animation Speed: x%.2f", m_animSpeed);
 
 	// Lava lamp physics parameters
 	if (ImGui::SliderFloat("Heater Temperature", &m_heaterTemp, 20.0f, 200.0f, "%.1f")) {

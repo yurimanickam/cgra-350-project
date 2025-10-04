@@ -26,11 +26,6 @@ uniform vec3 uCameraPos;
 uniform float uThreshold;
 uniform vec2 uResolution;
 
-// Depth textures (front + back)
-uniform sampler2D uDepthFrontTex;
-uniform sampler2D uDepthBackTex;
-uniform int uHaveDepthTex; // 0 = no, 1 = yes
-
 // Lighting
 uniform vec3 uLightPos;
 uniform vec3 uLightColor;
@@ -230,48 +225,10 @@ void main() {
 	float tEnd = cylinderHit.y;
 	if (tEnd < 0.0) tEnd = tStart + 20.0;
 
-	// If we have depth textures, reconstruct front AND back world points and clamp
-	if (uHaveDepthTex == 1) {
-		float depthFront = texture(uDepthFrontTex, uv).r;
-		float depthBack = texture(uDepthBackTex, uv).r;
-
-		// reconstruct front world
-		if (depthFront < 0.9999) {
-			float ndcZ = depthFront * 2.0 - 1.0;
-			vec4 clip = vec4(ndcXY, ndcZ, 1.0);
-			vec4 viewPos = uInvProjectionMatrix * clip;
-			viewPos /= viewPos.w;
-			vec3 worldFront = (uInvViewMatrix * vec4(viewPos.xyz, 1.0)).xyz;
-			float tSurfaceFront = dot(worldFront - nearWorld, rayDir);
-			if (tSurfaceFront > 0.0) {
-				tStart = max(tStart, tSurfaceFront + 1e-4);
-			}
-		}
-
-		// reconstruct back world
-		if (depthBack < 0.9999) {
-			float ndcZb = depthBack * 2.0 - 1.0;
-			vec4 clipb = vec4(ndcXY, ndcZb, 1.0);
-			vec4 viewPosB = uInvProjectionMatrix * clipb;
-			viewPosB /= viewPosB.w;
-			vec3 worldBack = (uInvViewMatrix * vec4(viewPosB.xyz, 1.0)).xyz;
-			float tSurfaceBack = dot(worldBack - nearWorld, rayDir);
-			if (tSurfaceBack > 0.0) {
-				tEnd = min(tEnd, tSurfaceBack - 1e-4);
-			}
-		}
-
-		// if tEnd ends up <= tStart, nothing inside
-		if (tEnd <= tStart + 1e-6) {
-			discard;
-			return;
-		}
-	}
-
 	float t = tStart + 1e-5;
 	float stepSize = 0.03;
 	bool hit = false;
-	vec3 hitPos;
+	vec3 hitPos = vec3(0.0);
 
 	while (t < tEnd) {
 		vec3 p = rayOrigin + rayDir * t;

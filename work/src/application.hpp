@@ -71,7 +71,6 @@ private:
 	float m_threshold = 0.2f;
 	bool m_showLavaLamp = true;
 	bool m_animateLamp = true;
-	float m_animSpeed = 1.0f;
 
 	// Helper methods for lava lamp
 	void initializeLavaLamp();
