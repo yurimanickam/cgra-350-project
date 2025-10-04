@@ -1,4 +1,4 @@
-﻿// lava_lamp.cpp
+// lava_lamp.cpp
 #define GLM_ENABLE_EXPERIMENTAL
 #include "lava_lamp.hpp"
 #include <glm/gtc/noise.hpp>

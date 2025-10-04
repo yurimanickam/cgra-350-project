@@ -27,7 +27,7 @@ class LavaLamp {
 private:
 	std::vector<LavaBlob> m_blobs;
 
-	// Lamp dimensions — MATCH THESE TO YOUR MESH
+	// Lamp dimensions ï¿½ MATCH THESE TO YOUR MESH
 	float m_radius = 1.8f;      // max bulb radius (matches lamp mesh max)
 	float m_height = 10.0f;     // lamp height (matches mesh)
 	float m_baseHeight = 2.0f;  // Heating element height (glass bottom height)
@@ -38,7 +38,7 @@ private:
 	float m_ambientTemp = 20.0f;
 	float m_heaterTemp = 80.0f;
 
-	// Time scaling (animation speed multiplier — 1.0 = real time)
+	// Time scaling (animation speed multiplier ï¿½ 1.0 = real time)
 	float m_timeScale = 1.0f;
 
 	// Metaball parameters

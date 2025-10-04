@@ -8,7 +8,6 @@ in vec3 FragPos;
 in vec3 Normal;
 
 #define MAX_BLOBS 16
-
 uniform vec4 uBlobPositions[MAX_BLOBS];
 uniform float uBlobRadii[MAX_BLOBS];
 uniform float uBlobBlobbiness[MAX_BLOBS];
