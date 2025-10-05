@@ -212,35 +212,53 @@ void main() {
 	vec3 rayOrigin = nearWorld;
 	vec3 rayDir = normalize(farWorld - nearWorld);
 
-	// Use max radius for initial cylinder intersection (fast reject)
-	float maxRadius = max(uLampRadius, uLampTopRadius) + uRadiusPadding;
-	vec2 cylinderHit = rayCylinderIntersect(rayOrigin, rayDir, maxRadius, 0.0, uLampHeight);
+	// Conservative outer bounds for early rejection
+	float outerRadius = uLampRadius + uRadiusPadding;
+	vec2 cylinderHit = rayCylinderIntersect(rayOrigin, rayDir, outerRadius, 0.0, uLampHeight);
 
 	if (cylinderHit.x < 0.0) {
 		discard;
 		return;
 	}
 
-	float tStart = cylinderHit.x;
+	float tStart = max(0.0, cylinderHit.x);
 	float tEnd = cylinderHit.y;
-	if (tEnd < 0.0) tEnd = tStart + 20.0;
+	if (tEnd < 0.0 || tEnd > 100.0) {
+		tEnd = tStart + 20.0;
+	}
 
-	float t = tStart + 1e-5;
+	float t = tStart;
 	float stepSize = 0.03;
 	bool hit = false;
 	vec3 hitPos = vec3(0.0);
+	int maxSteps = 400;
+	int step = 0;
 
-	while (t < tEnd) {
+	while (t < tEnd && step < maxSteps) {
 		vec3 p = rayOrigin + rayDir * t;
 
-		// compute tapered radius at p.y (linear interp)
-		float yNorm = clamp(p.y / uLampHeight, 0.0, 1.0);
-		float radiusAtY = mix(uLampRadius, uLampTopRadius, yNorm) + uRadiusPadding;
+		// Compute ACTUAL glass radius at this height (matches your mesh geometry)
+		float glassBottomY = 1.7;
+		float glassTopY = 10.0;
 
-		// skip samples outside tapered boundary
-		float distXZ = length(p.xz);
-		if (distXZ > radiusAtY) {
+		// Only raymarch inside the glass interior
+		if (p.y < glassBottomY || p.y > glassTopY) {
 			t += stepSize;
+			step++;
+			continue;
+		}
+
+		// Linear taper from 1.8 at bottom to 1.0 at top (matches createLampContainerGlass)
+		float yFrac = (p.y - glassBottomY) / (glassTopY - glassBottomY);
+		float glassRadiusAtY = mix(1.8, 1.0, yFrac);
+
+		// Interior radius is slightly smaller (account for glass thickness ~0.05)
+		float interiorRadius = glassRadiusAtY - 0.1; // 0.1 units inset from glass
+
+		float distXZ = length(p.xz);
+		if (distXZ > interiorRadius) {
+			t += stepSize;
+			step++;
 			continue;
 		}
 
