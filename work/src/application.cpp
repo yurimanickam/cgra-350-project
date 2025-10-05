@@ -530,11 +530,17 @@ void Application::renderLavaLamp(const glm::mat4& view, const glm::mat4& proj) {
 	// PASS 2: Metaball raymarching (reads depth, writes color + depth)
 	// -------------------------
 	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-	glDepthFunc(GL_LEQUAL); // Pass if metaball <= existing depth
+	glDepthFunc(GL_LESS); // Pass if metaball <= existing depth
 	glDepthMask(GL_TRUE);
 
 	glUniform1i(glGetUniformLocation(m_lavaShader, "uRenderMode"), 1);
 	glUniform1i(glGetUniformLocation(m_lavaShader, "uIsFullscreenQuad"), 1);
+
+	// Bind depth texture from metal pre-pass (read-only)
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, m_depthTextureFront);
+	glUniform1i(glGetUniformLocation(m_lavaShader, "uDepthTexture"), 0);
+
 	m_fullscreenQuad.draw();
 	glUniform1i(glGetUniformLocation(m_lavaShader, "uIsFullscreenQuad"), 0);
 

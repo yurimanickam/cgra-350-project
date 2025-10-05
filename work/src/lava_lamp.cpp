@@ -1,4 +1,4 @@
-// lava_lamp.cpp
+﻿// lava_lamp.cpp
 #define GLM_ENABLE_EXPERIMENTAL
 #include "lava_lamp.hpp"
 #include <glm/gtc/noise.hpp>
@@ -85,48 +85,54 @@ void LavaLamp::update(float deltaTime) {
 }
 
 void LavaLamp::updateBlobPhysics(LavaBlob& blob, float dt) {
-	// Heat diffusion - blobs near bottom get hotter
-	float targetTemp = m_ambientTemp;
-	if ((blob.position.y - blob.radius) < (m_baseHeight + 1.0f)) {
-		targetTemp = m_heaterTemp;
-	}
-	blob.temperature += (targetTemp - blob.temperature) * m_heatDiffusion * dt;
+	// Heat diffusion - GRADIENT based (not step function)
+	// Blobs closer to bottom heat faster
+	float distFromHeater = glm::max(0.0f, blob.position.y - m_baseHeight);
+	float heatZone = 2.0f; // heating influence extends 2 units up
+	float heatFactor = glm::clamp(1.0f - (distFromHeater / heatZone), 0.0f, 1.0f);
 
-	// Buoyancy: positive upward when hotter
-	float tempDiff = blob.temperature - m_ambientTemp;
-	float buoyancy = 0.0f;
-	if (tempDiff > 0.0f) {
-		float denom = glm::max(1.0f, (m_heaterTemp - m_ambientTemp));
-		float normalized = tempDiff / denom;
-		buoyancy = normalized * (-m_gravity) * 1.8f;
-	}
+	float targetTemp = m_ambientTemp + heatFactor * (m_heaterTemp - m_ambientTemp);
+	blob.temperature += (targetTemp - blob.temperature) * 0.8f * dt; // fast diffusion
+
+	// CORRECTED BUOYANCY: Archimedes principle
+	// Hot blobs are less dense -> float upward
+	float tempFactor = glm::clamp((blob.temperature - m_ambientTemp) / (m_heaterTemp - m_ambientTemp), 0.0f, 1.0f);
+
+	// Density decreases with temperature (thermal expansion)
+	float densityRatio = 1.0f - 0.15f * tempFactor; // hot blobs are 15% less dense
+
+	// Buoyant force = (ambient_density - blob_density) * volume * gravity
+	// Simplified: use density ratio directly
+	float buoyancy = (1.0f - densityRatio) * (-m_gravity) * 12.0f; // strong effect
 
 	// Basic forces
 	glm::vec3 acceleration(0.0f);
-	acceleration.y += m_gravity;  // gravity (negative)
-	acceleration.y += buoyancy;   // buoyant upward
+	acceleration.y += m_gravity * densityRatio; // gravity scales with density
+	acceleration.y += buoyancy;
 
-	// Per-blob temperature-dependent viscosity:
-	// tempFactor ranges 0..1 (ambient..heater). Hotter => less viscous.
-	float tempFactor = glm::clamp((blob.temperature - m_ambientTemp) / (m_heaterTemp - m_ambientTemp), 0.0f, 1.0f);
-	// base viscosity 0.5 at ambient; when hot reduce down to ~0.15 (adjustable)
-	float viscosity = 0.5f * (1.0f - 0.7f * tempFactor);
-	acceleration -= blob.velocity * viscosity;
+	// DRAG FORCE (not viscosity damping)
+	// Stokes drag: F = 6π * viscosity * radius * velocity
+	// Simplified: drag proportional to velocity and blob size
+	float fluidViscosity = 0.3f * (1.0f + 0.5f * tempFactor); // less viscous when hot
+	glm::vec3 drag = -blob.velocity * (fluidViscosity * blob.radius * 2.0f);
+	acceleration += drag;
 
-	// Add some turbulence (Perlin noise)
-	float noiseScale = 0.25f;
+	// Turbulence (curl noise would be better, but Perlin is fine)
+	float noiseScale = 0.3f;
+	float time = glfwGetTime() * 0.5f; // use global time for animation
 	glm::vec3 noiseVec(
-		glm::perlin(blob.position * noiseScale + glm::vec3(0.0f, dt, 0.0f)),
-		glm::perlin(blob.position * noiseScale + glm::vec3(100.0f, dt, 0.0f)),
-		glm::perlin(blob.position * noiseScale + glm::vec3(200.0f, dt, 0.0f))
+		glm::perlin(blob.position * noiseScale + glm::vec3(time, 0.0f, 0.0f)),
+		glm::perlin(blob.position * noiseScale + glm::vec3(0.0f, time, 100.0f)),
+		glm::perlin(blob.position * noiseScale + glm::vec3(200.0f, 0.0f, time))
 	);
-	acceleration += noiseVec * 0.5f;
+	acceleration += noiseVec * 1.2f;
 
-	// integrate
+	// Integrate (semi-implicit Euler for stability)
 	blob.velocity += acceleration * dt;
+	blob.velocity *= 0.98f; // gentle global damping for stability
 	blob.position += blob.velocity * dt;
 
-	// boundary handling
+	// Boundary handling
 	applyBoundaryConditions(blob);
 }
 
@@ -174,7 +180,7 @@ void LavaLamp::handleBlobInteractions() {
 			if (d > 1e-5f && d < minDist) {
 				glm::vec3 dir = diff / d;
 				float overlap = minDist - d;
-				glm::vec3 force = dir * (overlap * 0.12f);
+				glm::vec3 force = dir * (overlap * 0.05f);
 				m_blobs[i].velocity += force * 0.5f;
 				m_blobs[j].velocity -= force * 0.5f;
 			}
@@ -215,12 +221,18 @@ glm::vec3 LavaLamp::computeDensityGradient(const glm::vec3& point) const {
 }
 
 void LavaLamp::mergeBlobsIfClose() {
-	const float mergeDistance = 0.25f;
-
+	const float baseMergeDist = 0.4f;
 	for (size_t i = 0; i < m_blobs.size(); ++i) {
+		// Calculate blobbiness factor for blob i
+		float blobbinessFactor = glm::clamp(-m_blobs[i].blobbiness / 0.5f, 0.5f, 2.0f);
+		float mergeDist = baseMergeDist * blobbinessFactor;
+
 		for (size_t j = i + 1; j < m_blobs.size(); ++j) {
 			float dist = glm::distance(m_blobs[i].position, m_blobs[j].position);
-			if (dist < mergeDistance && dist > 1e-5f) {
+			float combinedRadius = m_blobs[i].radius + m_blobs[j].radius;
+
+			// Merge threshold scales with blob sizes
+			if (dist < mergeDist * combinedRadius && dist > 1e-5f) {
 				// conserve approximate volume (radius^3)
 				float vol1 = pow(m_blobs[i].radius, 3.0f);
 				float vol2 = pow(m_blobs[j].radius, 3.0f);
@@ -242,39 +254,53 @@ void LavaLamp::mergeBlobsIfClose() {
 }
 
 void LavaLamp::splitLargeBlobs() {
-	const float baseMaxRadius = 1.5f; // base threshold (when cold)
+	// Hotter blobs have lower surface tension -> split easier
+	const float coldMaxRadius = 1.8f;  // Let cold blobs get bigger
+	const float hotMaxRadius = 1.3f;   // Hot blobs still split, but not too aggressively
+
 	size_t originalSize = m_blobs.size();
 
 	for (size_t i = 0; i < originalSize; ++i) {
-		// Compute temperature factor [0..1]
-		float tempFactor = glm::clamp((m_blobs[i].temperature - m_ambientTemp) / (m_heaterTemp - m_ambientTemp), 0.0f, 1.0f);
+		float tempFactor = glm::clamp(
+			(m_blobs[i].temperature - m_ambientTemp) / (m_heaterTemp - m_ambientTemp),
+			0.0f, 1.0f
+		);
 
-		// Hotter blobs should split at smaller radii -> effective threshold decreases with temp
-		// e.g. at tempFactor=0 -> 1.2 * baseMaxRadius, at tempFactor=1 -> 0.8 * baseMaxRadius
-		float effectiveMaxRadius = baseMaxRadius * (1.2f - 0.4f * tempFactor);
+		// Interpolate threshold based on temperature
+		float maxRadius = glm::mix(coldMaxRadius, hotMaxRadius, tempFactor);
 
-		if (m_blobs[i].radius > effectiveMaxRadius) {
-			// child radius ratio
-			float newRadius = m_blobs[i].radius * 0.7f;
+		if (m_blobs[i].radius > maxRadius) {
+			float childVolumeFraction = 0.2f + m_randomDist(m_rng) * 0.1f; // 0.2-0.3
+			float parentVol = pow(m_blobs[i].radius, 3.0f);
+			float childVol = parentVol * childVolumeFraction;
 
-			// vertical offset is larger for hotter blobs so they separate upwards more
-			glm::vec3 offset(
-				m_randomDist(m_rng) * 0.4f,
-				glm::abs(m_randomDist(m_rng)) * (0.4f + 0.8f * tempFactor), // stronger upward kick when hot
-				m_randomDist(m_rng) * 0.4f
-			);
+			float childRadius = pow(childVol, 1.0f / 3.0f);
+			float parentRadius = pow(parentVol - childVol, 1.0f / 3.0f);
 
-			LavaBlob newBlob = m_blobs[i];
-			newBlob.radius = newRadius;
-			newBlob.position += offset;
-			// give a slightly stronger velocity kick to separate when hot
-			newBlob.velocity += offset * (0.15f + 0.25f * tempFactor);
+			// Random offset direction (not just upward)
+			glm::vec3 splitDir = glm::normalize(glm::vec3(
+				m_randomDist(m_rng),
+				0.5f + 0.5f * tempFactor, // bias upward when hot
+				m_randomDist(m_rng)
+			));
 
-			m_blobs[i].radius = newRadius;
-			m_blobs[i].position -= offset;
-			m_blobs[i].velocity -= offset * (0.15f + 0.25f * tempFactor);
+			// Offset distance based on combined radii
+			float separation = (childRadius + parentRadius) * 1.2f;
+			glm::vec3 offset = splitDir * separation;
 
-			m_blobs.push_back(newBlob);
+			// Create child blob
+			LavaBlob child = m_blobs[i];
+			child.radius = childRadius;
+			child.position = m_blobs[i].position + offset;
+			child.velocity = m_blobs[i].velocity + splitDir * (0.3f + 0.5f * tempFactor);
+			// Inherit slightly cooler temp (surface was cooler)
+			child.temperature = m_blobs[i].temperature - 2.0f;
+
+			// Update parent
+			m_blobs[i].radius = parentRadius;
+			m_blobs[i].velocity -= splitDir * (0.1f * childVolumeFraction); // recoil
+
+			m_blobs.push_back(child);
 		}
 	}
 }

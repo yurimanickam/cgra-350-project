@@ -22,6 +22,7 @@ uniform mat4 uInvViewMatrix;
 uniform mat4 uViewMatrix;
 
 // Other uniforms
+uniform sampler2D uDepthTexture;
 uniform vec3 uCameraPos;
 uniform float uThreshold;
 uniform vec2 uResolution;
