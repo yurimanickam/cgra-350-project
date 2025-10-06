@@ -14,6 +14,9 @@ SET(sources
 	"skeleton.cpp"
 	"skeleton_model.hpp"
 	"skeleton_model.cpp"
+
+	"lava_lamp.hpp"
+	"lava_lamp.cpp"
 	
 	"opengl.hpp"
 
