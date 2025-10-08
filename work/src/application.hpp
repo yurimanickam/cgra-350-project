@@ -8,7 +8,7 @@
 #include "opengl.hpp"
 #include "cgra/cgra_mesh.hpp"
 #include "skeleton_model.hpp"
-#include "lava_lamp.hpp" // Add this include
+#include "david/lava_lamp.hpp" // Add this include
 
 // Basic model that holds the shader, mesh and transform for drawing.
 // Can be copied and modified for adding in extra information for drawing
