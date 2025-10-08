@@ -458,6 +458,15 @@ cgra::gl_mesh Application::createLampContainerMetal() {
 void Application::renderLavaLamp(const glm::mat4& view, const glm::mat4& proj) {
 	if (!m_showLavaLamp) return;
 
+
+	// Save current state
+	GLboolean depthMask;
+	glGetBooleanv(GL_DEPTH_WRITEMASK, &depthMask);
+	GLint depthFunc;
+	glGetIntegerv(GL_DEPTH_FUNC, &depthFunc);
+	GLboolean blendEnabled = glIsEnabled(GL_BLEND);
+
+
 	// retrieve the window size
 	int width, height;
 	glfwGetFramebufferSize(m_window, &width, &height);
@@ -595,6 +604,23 @@ void Application::renderLavaLamp(const glm::mat4& view, const glm::mat4& proj) {
 	glDepthMask(GL_TRUE);
 	glDepthFunc(GL_LESS);
 	glDisable(GL_BLEND);
+
+	// RESTORE ALL STATE at the end:
+	glDepthMask(depthMask);
+	glDepthFunc(depthFunc);
+	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+
+	if (!blendEnabled) {
+		glDisable(GL_BLEND);
+	}
+
+	// IMPORTANT: Unbind textures and reset to default shader
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, 0);
+	glBindTexture(GL_TEXTURE_CUBE_MAP, 0);
+	glUseProgram(0);
+
+
 }
 
 void Application::render() {
@@ -642,7 +668,7 @@ void Application::render() {
 	model = glm::scale(model, glm::vec3(2.5, 2.5, 2.5));
 	glUniformMatrix4fv(glGetUniformLocation(m_pbr_shader, "model"), 1, GL_FALSE, value_ptr(model));
 	glUniformMatrix3fv(glGetUniformLocation(m_pbr_shader, "normalMatrix"), 1, GL_FALSE, value_ptr(glm::transpose(glm::inverse(glm::mat3(model)))));
-	renderSphere();
+	//renderSphere();
 
 	// render skybox
 	glUseProgram(m_background_shader);
@@ -658,7 +684,7 @@ void Application::render() {
 	glPolygonMode(GL_FRONT_AND_BACK, (m_showWireframe) ? GL_LINE : GL_FILL);
 
 	// Render lava lamp
-	//renderLavaLamp(view, proj);
+	renderLavaLamp(view, proj);
 
 	renderTempCube(view, proj);
 
