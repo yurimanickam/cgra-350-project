@@ -10,22 +10,33 @@
 // project
 #include "cgra/cgra_mesh.hpp"
 
-// Represents a single blob in the lava lamp
 struct LavaBlob {
 	glm::vec3 position;
 	glm::vec3 velocity;
 	float radius;
-	float temperature;  // Affects buoyancy & viscosity
-	float blobbiness;   // Controls blob shape (-1 to 0, negative for proper decay)
+	float temperature;
+	float blobbiness;
 	glm::vec3 color;
+
+	// Spring-based physics
+	glm::vec3 anchorPoint;       // Virtual point this blob is attracted to
+	float anchorStrength = 1.0f; // Spring constant to anchor
+	float heatPhase = 0.0f;      // 0-1 cycle position (0=bottom, 0.5=top, 1=bottom)
+	float cycleSpeed = 1.0f;     // How fast it cycles
 
 	LavaBlob(glm::vec3 pos = glm::vec3(0.0f), float r = 1.0f);
 };
+
 
 // Main lava lamp simulation class
 class LavaLamp {
 private:
 	std::vector<LavaBlob> m_blobs;
+
+	float m_springConstant = 3.0f;       // Strength of attraction to anchor
+	float m_dampingConstant = 5.0f;      // Velocity damping
+	float m_repulsionStrength = 2.0f;    // Inter-blob repulsion
+	float m_repulsionRange = 1.5f;       // Range of repulsion (in radii)
 
 	// Lamp dimensions � MATCH THESE TO YOUR MESH
 	float m_radius = 1.8f;      // max bulb radius (matches lamp mesh max)
@@ -52,6 +63,9 @@ private:
 	void applyBoundaryConditions(LavaBlob& blob);
 	float computeDensityField(const glm::vec3& point) const;
 	glm::vec3 computeDensityGradient(const glm::vec3& point) const;
+
+	void updateAnchorPoints(float dt);
+	glm::vec3 computeRepulsionForce(const LavaBlob& blob, size_t blobIndex);
 
 	// Mesh generation (if you use marching cubes fallback)
 	cgra::gl_mesh generateMarchingCubesMesh();
@@ -92,7 +106,6 @@ public:
 	void addBlob(const glm::vec3& position, float radius);
 	void removeBlob();
 
-	// Topology helpers (exposed so app can call them if desired)
 	void mergeBlobsIfClose();
 	void splitLargeBlobs();
 };

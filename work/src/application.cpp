@@ -107,7 +107,7 @@ void Application::initializeLavaLamp() {
 	// Initialize the lava lamp simulation with 5 blobs
 	m_lavaLamp.initialize(5);
 
-	m_threshold = 0.2f;         // Lower threshold
+	m_threshold = 1.0f;         // Lower threshold
 	m_heaterTemp = 120.0f;      // increased heater for stronger rise
 	m_gravity = -9.8f;          // fixed gravity (permanent)
 
@@ -638,7 +638,7 @@ void Application::renderGUI() {
 	// Gravity is fixed now; don't expose a slider to avoid accidental changes.
 	// m_gravity is permanently -9.8 (set in initializeLavaLamp)
 
-	if (ImGui::SliderFloat("Blob Threshold", &m_threshold, 0.05f, 1.0f, "%.2f")) {
+	if (ImGui::SliderFloat("Blob Threshold", &m_threshold, 0.3f, 3.0f, "%.2f")) {
 		m_lavaLamp.setThreshold(m_threshold);
 	}
 

@@ -42,23 +42,26 @@ uniform float uRadiusPadding;
 uniform int uRenderMode;
 uniform int uIsFullscreenQuad;
 
-// Compute metaball field density at a point
+// Compute metaball field density at a point using proper inverse power law
 float computeField(vec3 point) {
-	float density = 0.0;
+	float fieldSum = 0.0;
 	for (int i = 0; i < uBlobCount && i < MAX_BLOBS; i++) {
 		vec3 blobPos = uBlobPositions[i].xyz;
 		float radius = max(0.0001, uBlobRadii[i]);
-		vec3 diff = point - blobPos;
-		float dist = length(diff);
+		float dist = length(point - blobPos);
 
-		// Simple field function
-		if (dist < radius * 2.0) {
-			float normalized = dist / (radius * 2.0);
-			float field = 1.0 - normalized;
-			density += field * field;
-		}
+		// Prevent division by zero and add small epsilon
+		dist = max(dist, 0.01);
+
+		// Classic metaball formula: contribution = (radius^2 / dist^2)^2
+		// This gives inverse 4th power falloff which creates smooth blending
+		float normalizedDist = radius / dist;
+		float contribution = normalizedDist * normalizedDist; // r^2/d^2
+		contribution = contribution * contribution; // (r^2/d^2)^2
+
+		fieldSum += contribution;
 	}
-	return density;
+	return fieldSum;
 }
 
 // Compute color at a point
@@ -88,14 +91,16 @@ vec3 computeBlobColor(vec3 point) {
 
 // Compute gradient (normal) using finite differences
 vec3 computeGradient(vec3 p) {
-	float eps = 0.02;
+	float eps = 0.01; // smaller epsilon for more accurate normals
 	float dx = computeField(p + vec3(eps, 0, 0)) - computeField(p - vec3(eps, 0, 0));
 	float dy = computeField(p + vec3(0, eps, 0)) - computeField(p - vec3(0, eps, 0));
 	float dz = computeField(p + vec3(0, 0, eps)) - computeField(p - vec3(0, 0, eps));
 	vec3 grad = vec3(dx, dy, dz);
-	if (length(grad) > 0.001) {
-		return normalize(grad);
+	float len = length(grad);
+	if (len > 0.0001) {
+		return grad / len;
 	}
+	// Fallback to up vector
 	return vec3(0, 1, 0);
 }
 
@@ -235,6 +240,7 @@ void main() {
 	int maxSteps = 400;
 	int step = 0;
 
+	// Adaptive step size based on field strength
 	while (t < tEnd && step < maxSteps) {
 		vec3 p = rayOrigin + rayDir * t;
 
@@ -265,14 +271,26 @@ void main() {
 
 		if (p.y >= 0.0 && p.y <= uLampHeight) {
 			float field = computeField(p);
+			// Check against threshold (note: with new formula, typical threshold is 0.5-2.0)
 			if (field >= uThreshold) {
-				hitPos = p;
+				// Refine hit position with a couple binary search steps for smoother surface
+				float tHit = t;
+				float tStep = stepSize;
+				for (int refine = 0; refine < 3; refine++) {
+					tStep *= 0.5;
+					vec3 pTest = rayOrigin + rayDir * (tHit - tStep);
+					if (computeField(pTest) >= uThreshold) {
+						tHit -= tStep;
+					}
+				}
+				hitPos = rayOrigin + rayDir * tHit;
 				hit = true;
 				break;
 			}
 		}
 
 		t += stepSize;
+		step++;
 	}
 
 	if (hit) {
