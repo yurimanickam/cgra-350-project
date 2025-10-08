@@ -101,11 +101,11 @@ void LavaLamp::update(float deltaTime) {
 
 		// Blob heats up at bottom, cools at top
 		float targetTemp = m_ambientTemp + heatZoneFactor * (m_heaterTemp - m_ambientTemp);
-		blob.temperature += (targetTemp - blob.temperature) * 5.0f * deltaTime; // Fast heat transfer
+		blob.temperature += (targetTemp - blob.temperature) * 20.0f * deltaTime; // INCREASED for responsiveness
 
-		const float referenceHotTemp = 150.0f; // Fixed reference
+		// *** CRITICAL FIX: Use ACTUAL heater temp, not fixed reference ***
 		float tempFactor = glm::clamp(
-			(blob.temperature - m_ambientTemp) / (referenceHotTemp - m_ambientTemp),
+			(blob.temperature - m_ambientTemp) / glm::max(1.0f, m_heaterTemp - m_ambientTemp),
 			0.0f, 1.0f
 		);
 
@@ -141,12 +141,12 @@ void LavaLamp::update(float deltaTime) {
 		// Temperature also affects target height range
 		// Hot blobs can go higher, cold blobs stay lower
 		float minHeight = m_baseHeight + blob.radius;
-		float maxHeight = m_height - blob.radius - 0.5f;
+		float maxHeight = m_height - blob.radius - 0.2f; // Reduced margin
 
-		// Hot blobs prefer top 70% of range, cold blobs prefer bottom 70%
-		float heightBias = tempFactor; // 0 = bottom bias, 1 = top bias
-		float effectiveMinHeight = glm::mix(minHeight, minHeight + (maxHeight - minHeight) * 0.3f, heightBias);
-		float effectiveMaxHeight = glm::mix(maxHeight - (maxHeight - minHeight) * 0.3f, maxHeight, heightBias);
+		// Hot blobs prefer top, cold blobs prefer bottom
+		float heightBias = tempFactor * tempFactor; // Square for more extreme separation
+		float effectiveMinHeight = glm::mix(minHeight, minHeight + (maxHeight - minHeight) * 0.15f, heightBias);
+		float effectiveMaxHeight = glm::mix(maxHeight - (maxHeight - minHeight) * 0.15f, maxHeight, heightBias);
 
 		float targetY = effectiveMinHeight + cyclePos * (effectiveMaxHeight - effectiveMinHeight);
 
@@ -159,14 +159,14 @@ void LavaLamp::update(float deltaTime) {
 		// === TEMPERATURE AFFECTS SPRING STRENGTH ===
 		// Hot blobs are more "energetic" (weaker anchor, more free-floating)
 		// Cold blobs are more "sluggish" (stronger anchor, stick to target)
-		float tempAnchorStrength = glm::mix(1.5f, 0.8f, tempFactor); // Stronger when cold
+		float tempAnchorStrength = glm::mix(2.0f, 0.6f, tempFactor); // Much stronger when cold
 
 		// === FORCES ===
 		glm::vec3 toAnchor = blob.anchorPoint - blob.position;
 		glm::vec3 springForce = toAnchor * m_springConstant * tempAnchorStrength;
 
 		// Temperature affects damping: hot = less damping (more fluid), cold = more damping (more viscous)
-		float tempDamping = glm::mix(m_dampingConstant * 1.3f, m_dampingConstant * 0.7f, tempFactor);
+		float tempDamping = glm::mix(m_dampingConstant * 1.5f, m_dampingConstant * 0.5f, tempFactor);
 		glm::vec3 dampingForce = -blob.velocity * tempDamping;
 
 		// Repulsion from all other blobs
@@ -288,12 +288,26 @@ glm::vec3 LavaLamp::computeRepulsionForce(const LavaBlob& blob, size_t blobIndex
 }
 
 void LavaLamp::applyBoundaryConditions(LavaBlob& blob) {
-	// Cylindrical boundary using spring-like soft constraints
+	// === TAPERED CYLINDRICAL BOUNDARY ===
+	// Glass geometry: radius tapers from 1.8 at bottom (y=1.7) to 1.0 at top (y=10.0)
+	const float glassBottomY = 1.7f;
+	const float glassTopY = 10.0f;
+	const float glassBottomRadius = 1.8f;
+	const float glassTopRadius = 1.0f;
+	const float glassThickness = 0.1f; // Interior offset from glass surface
+
+	// Calculate current glass radius at blob's height
+	float yFrac = glm::clamp((blob.position.y - glassBottomY) / (glassTopY - glassBottomY), 0.0f, 1.0f);
+	float glassRadiusAtY = glm::mix(glassBottomRadius, glassTopRadius, yFrac);
+
+	// Maximum allowed distance from center (account for blob radius and glass thickness)
+	float maxDist = glassRadiusAtY - blob.radius - glassThickness;
+
+	// Current distance from center axis
 	float distFromCenter = sqrt(blob.position.x * blob.position.x + blob.position.z * blob.position.z);
-	float maxDist = m_radius - blob.radius - 0.05f;
 
 	if (distFromCenter > maxDist) {
-		// Soft spring force back to boundary
+		// Soft spring force back toward center
 		glm::vec2 xz(blob.position.x, blob.position.z);
 		glm::vec2 dir = glm::normalize(xz);
 		float penetration = distFromCenter - maxDist;
@@ -314,9 +328,9 @@ void LavaLamp::applyBoundaryConditions(LavaBlob& blob) {
 		}
 	}
 
-	// Vertical boundaries with soft springs
+	// === VERTICAL BOUNDARIES ===
 	float minY = m_baseHeight + blob.radius;
-	float maxY = m_height - blob.radius;
+	float maxY = m_height - blob.radius; // Removed extra margin
 
 	if (blob.position.y < minY) {
 		float penetration = minY - blob.position.y;
@@ -398,22 +412,64 @@ void LavaLamp::mergeBlobsIfClose() {
 			float dist = glm::distance(m_blobs[i].position, m_blobs[j].position);
 			float combinedRadius = m_blobs[i].radius + m_blobs[j].radius;
 
-			// Merge if very close and moving in similar direction
-			glm::vec3 relVel = m_blobs[i].velocity - m_blobs[j].velocity;
-			bool closeEnough = dist < combinedRadius * 0.5f;
-			bool similarMotion = glm::length(relVel) < 0.3f;
+			// === CONDITION 1: Physical Proximity ===
+			// Blobs must be VERY close (centers nearly touching, not just visual overlap)
+			// Changed from 0.5f (50% overlap) to 0.25f (75% overlap = almost touching)
+			bool closeEnough = dist < combinedRadius * 0.25f;
 
-			// Also check if in similar phase (prevents merging opposite-direction blobs)
+			if (!closeEnough) continue; // Early exit if not close
+
+			// === CONDITION 2: Similar Velocity ===
+			// Must be moving in similar directions (gentle collision, not fast impact)
+			glm::vec3 relVel = m_blobs[i].velocity - m_blobs[j].velocity;
+			bool similarMotion = glm::length(relVel) < 0.2f; // Stricter: was 0.3f
+
+			// === CONDITION 3: Temperature Similarity ===
+			// NEW: Blobs can only merge if at similar temperatures (similar viscosity)
+			// Hot wax is fluid and merges easily; cold wax is viscous and bounces
+			float tempDiff = abs(m_blobs[i].temperature - m_blobs[j].temperature);
+			float avgTemp = (m_blobs[i].temperature + m_blobs[j].temperature) * 0.5f;
+
+			// Temperature difference must be small relative to ambient temperature
+			// AND average temperature must be reasonably warm (fluid enough to merge)
+			bool similarTemp = tempDiff < 15.0f; // Within 15 degrees
+			bool warmEnough = avgTemp > (m_ambientTemp + 30.0f); // At least 30° above ambient
+
+			// === CONDITION 4: Phase Similarity ===
+			// Prevents merging blobs going in opposite vertical directions
 			float phaseDiff = abs(m_blobs[i].heatPhase - m_blobs[j].heatPhase);
 			if (phaseDiff > 0.5f) phaseDiff = 1.0f - phaseDiff; // Wrap around
-			bool similarPhase = phaseDiff < 0.3f;
+			bool similarPhase = phaseDiff < 0.2f; // Stricter: was 0.3f
 
-			if (closeEnough && similarMotion && similarPhase) {
+			// === CONDITION 5: Height-Dependent Merge Probability ===
+			// NEW: Merging is more likely in "active zones" (hot bottom, cool top)
+			float avgY = (m_blobs[i].position.y + m_blobs[j].position.y) * 0.5f;
+			float heightFrac = (avgY - m_baseHeight) / (m_height - m_baseHeight);
+
+			// Merge probability peaks at bottom (0-20% height) and top (80-100% height)
+			// Middle zone (20-80%) has reduced merge chance
+			float mergeProbability = 1.0f;
+			if (heightFrac > 0.2f && heightFrac < 0.8f) {
+				// Middle zone: only 30% chance to merge
+				mergeProbability = 0.3f;
+			}
+			// Bottom/top zones: 100% chance (if other conditions met)
+
+			// Random roll based on probability
+			bool allowedByHeight = (m_randomDist(m_rng) + 1.0f) * 0.5f < mergeProbability;
+
+			// === CONDITION 6: Size Limit ===
+			// NEW: Prevent creating extremely large blobs
+			float vol1 = pow(m_blobs[i].radius, 3.0f);
+			float vol2 = pow(m_blobs[j].radius, 3.0f);
+			float newRadius = pow(vol1 + vol2, 1.0f / 3.0f);
+			bool notTooLarge = newRadius < 1.2f; // Prevent super-blobs
+
+			// === ALL CONDITIONS MUST BE TRUE ===
+			if (closeEnough && similarMotion && similarTemp && warmEnough &&
+				similarPhase && allowedByHeight && notTooLarge) {
+
 				// Volume-conserving merge
-				float vol1 = pow(m_blobs[i].radius, 3.0f);
-				float vol2 = pow(m_blobs[j].radius, 3.0f);
-				float newRadius = pow(vol1 + vol2, 1.0f / 3.0f);
-
 				float w1 = vol1 / (vol1 + vol2);
 				float w2 = vol2 / (vol1 + vol2);
 
@@ -436,11 +492,35 @@ void LavaLamp::mergeBlobsIfClose() {
 }
 
 void LavaLamp::splitLargeBlobs() {
-	const float maxRadius = 1.0f;
+	// Lower threshold for splitting to counterbalance merging
+	const float maxRadius = 0.85f; // Was 1.0f - split earlier
 	size_t originalSize = m_blobs.size();
 
 	for (size_t i = 0; i < originalSize; ++i) {
 		if (m_blobs[i].radius > maxRadius) {
+
+			// === SPLITTING CONDITIONS ===
+			// Large blobs should split when:
+			// 1. They're cooling (at top of lamp) - viscosity increases, surface tension wins
+			// 2. They're under stress (high velocity) - turbulence tears them apart
+
+			float heightFrac = (m_blobs[i].position.y - m_baseHeight) / (m_height - m_baseHeight);
+			bool inCoolingZone = heightFrac > 0.6f; // Top 40% of lamp
+
+			float speed = glm::length(m_blobs[i].velocity);
+			bool highVelocity = speed > 1.5f; // Moving fast
+
+			// Cool blobs split more easily (more viscous, less able to hold together)
+			float tempFactor = (m_blobs[i].temperature - m_ambientTemp) /
+				glm::max(1.0f, m_heaterTemp - m_ambientTemp);
+			bool coolEnough = tempFactor < 0.4f; // Below 40% of max heat
+
+			// Split if: (in cooling zone) OR (high velocity) OR (cool and large)
+			bool shouldSplit = inCoolingZone || highVelocity ||
+				(coolEnough && m_blobs[i].radius > 0.95f);
+
+			if (!shouldSplit) continue; // Don't split hot, slow, small blobs
+
 			// 50-50 split for balance
 			float parentVol = pow(m_blobs[i].radius, 3.0f);
 			float childVol = parentVol * 0.5f;
@@ -458,20 +538,24 @@ void LavaLamp::splitLargeBlobs() {
 				perpDir = glm::normalize(perpDir);
 			}
 
-			float separation = (childRadius + parentRadius) * 1.05f;
+			float separation = (childRadius + parentRadius) * 1.1f; // Slightly more separation
 
 			// Create child blob
 			LavaBlob child = m_blobs[i];
 			child.radius = childRadius;
 			child.position = m_blobs[i].position + perpDir * separation;
-			child.velocity = m_blobs[i].velocity; // Inherit velocity (spring will separate them)
-			child.heatPhase += 0.1f; // Slightly offset phase
+
+			// Give child a slight velocity boost away from parent
+			child.velocity = m_blobs[i].velocity + perpDir * 0.2f;
+
+			child.heatPhase += 0.15f; // More offset phase (was 0.1f)
 			if (child.heatPhase > 1.0f) child.heatPhase -= 1.0f;
-			child.cycleSpeed = m_blobs[i].cycleSpeed + m_randomDist(m_rng) * 0.1f; // Vary cycle speed
+			child.cycleSpeed = m_blobs[i].cycleSpeed + m_randomDist(m_rng) * 0.15f; // More variation
 
 			// Update parent
 			m_blobs[i].radius = parentRadius;
-			m_blobs[i].position -= perpDir * separation * 0.5f; // Move slightly away too
+			m_blobs[i].position -= perpDir * separation * 0.5f;
+			m_blobs[i].velocity -= perpDir * 0.2f; // Push parent away too
 
 			m_blobs.push_back(child);
 		}
