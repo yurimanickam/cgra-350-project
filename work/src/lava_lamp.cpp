@@ -7,6 +7,7 @@
 #include <cmath>
 #include <glm/gtx/extended_min_max.hpp>
 #include <iostream>
+#include <glm/gtc/constants.hpp>
 
 using namespace glm;
 
@@ -49,22 +50,31 @@ void LavaLamp::initialize(int numBlobs) {
 	m_blobs.clear();
 
 	for (int i = 0; i < numBlobs; ++i) {
-		glm::vec3 pos;
-		// Start blobs somewhat inside the lamp interior
-		pos.x = m_randomDist(m_rng) * m_radius * 0.6f;
-		pos.y = m_baseHeight + 0.4f + i * 1.0f; // start above glass bottom
-		pos.z = m_randomDist(m_rng) * m_radius * 0.6f;
+		float angle = (2.0f * glm::pi<float>() * i) / numBlobs;
+		float radialDist = 0.3f + m_randomDist(m_rng) * 0.2f;
 
-		float radius = 0.6f + (m_randomDist(m_rng) + 1.0f) * 0.2f; // around 0.6..1.0
+		glm::vec3 pos;
+		pos.x = cos(angle) * radialDist * m_radius;
+		pos.z = sin(angle) * radialDist * m_radius;
+		pos.y = m_baseHeight + 1.0f + (float(i) / numBlobs) * 3.0f;
+
+		float radius = 0.5f + (m_randomDist(m_rng) + 1.0f) * 0.15f;
 
 		LavaBlob blob(pos, radius);
-		blob.temperature = m_ambientTemp + (m_randomDist(m_rng) * 5.0f);
-		blob.blobbiness = -0.1f - (m_randomDist(m_rng) * 0.2f);
+		blob.temperature = m_ambientTemp + m_randomDist(m_rng) * 10.0f;
+		blob.blobbiness = -0.15f - (m_randomDist(m_rng) * 0.15f);
 		blob.color = glm::vec3(
 			glm::clamp(0.9f + m_randomDist(m_rng) * 0.1f, 0.0f, 1.0f),
 			glm::clamp(0.3f + m_randomDist(m_rng) * 0.2f, 0.0f, 1.0f),
 			glm::clamp(0.0f + m_randomDist(m_rng) * 0.05f, 0.0f, 1.0f)
 		);
+
+		// Initialize spring parameters
+		blob.heatPhase = float(i) / numBlobs; // Stagger phases
+		blob.cycleSpeed = 0.8f + m_randomDist(m_rng) * 0.4f; // Vary speed
+		blob.anchorStrength = 1.0f;
+		blob.anchorPoint = pos; // Start at current position
+		blob.velocity = glm::vec3(0.0f);
 
 		m_blobs.push_back(blob);
 	}
@@ -73,167 +83,333 @@ void LavaLamp::initialize(int numBlobs) {
 void LavaLamp::update(float deltaTime) {
 	if (deltaTime <= 0.0f) return;
 
-	// Update each blob physics
-	for (auto& blob : m_blobs) {
-		updateBlobPhysics(blob, deltaTime);
+	// Update anchor points (drift over time)
+	updateAnchorPoints(deltaTime);
+
+	// Update each blob with repulsion forces
+	for (size_t i = 0; i < m_blobs.size(); ++i) {
+		LavaBlob& blob = m_blobs[i];
+
+		// === TEMPERATURE-DRIVEN PHYSICS ===
+		// Calculate actual blob temperature based on position (heat rises from bottom)
+		float distFromBottom = blob.position.y - m_baseHeight;
+		float heightFrac = glm::clamp(distFromBottom / (m_height - m_baseHeight), 0.0f, 1.0f);
+
+		// Temperature gradient: hot at bottom (near heater), cool at top
+		float heatZoneHeight = 2.0f; // Bottom 2 units are heated
+		float heatZoneFactor = glm::clamp(1.0f - (distFromBottom / heatZoneHeight), 0.0f, 1.0f);
+
+		// Blob heats up at bottom, cools at top
+		float targetTemp = m_ambientTemp + heatZoneFactor * (m_heaterTemp - m_ambientTemp);
+		blob.temperature += (targetTemp - blob.temperature) * 5.0f * deltaTime; // Fast heat transfer
+
+		const float referenceHotTemp = 150.0f; // Fixed reference
+		float tempFactor = glm::clamp(
+			(blob.temperature - m_ambientTemp) / (referenceHotTemp - m_ambientTemp),
+			0.0f, 1.0f
+		);
+
+		// === TEMPERATURE AFFECTS PHASE SPEED ===
+		// Hot blobs cycle faster (rise quickly, fall slowly)
+		// Cold blobs cycle slower (rise slowly, fall quickly)
+
+		// When hot (tempFactor > 0.5): speed up rising phase, slow down falling phase
+		// When cold (tempFactor < 0.5): slow down rising phase, speed up falling phase
+		float baseCycleSpeed = blob.cycleSpeed * 0.1f;
+
+		// Determine if currently rising (phase 0-0.5) or falling (phase 0.5-1.0)
+		float currentPhase = fmod(blob.heatPhase, 1.0f);
+		bool isRising = currentPhase < 0.5f;
+
+		float phaseSpeed;
+		if (isRising) {
+			// Rising phase: faster when hot
+			phaseSpeed = baseCycleSpeed * (0.5f + tempFactor * 1.5f); // 0.5x to 2x speed
+		}
+		else {
+			// Falling phase: faster when cold
+			phaseSpeed = baseCycleSpeed * (2.0f - tempFactor * 1.5f); // 2x to 0.5x speed
+		}
+
+		blob.heatPhase += phaseSpeed * deltaTime;
+		if (blob.heatPhase > 1.0f) blob.heatPhase -= 1.0f;
+
+		// === ANCHOR POINT CALCULATION ===
+		// Anchor point moves up and down based on heat phase
+		float cyclePos = sin(blob.heatPhase * 2.0f * glm::pi<float>()) * 0.5f + 0.5f;
+
+		// Temperature also affects target height range
+		// Hot blobs can go higher, cold blobs stay lower
+		float minHeight = m_baseHeight + blob.radius;
+		float maxHeight = m_height - blob.radius - 0.5f;
+
+		// Hot blobs prefer top 70% of range, cold blobs prefer bottom 70%
+		float heightBias = tempFactor; // 0 = bottom bias, 1 = top bias
+		float effectiveMinHeight = glm::mix(minHeight, minHeight + (maxHeight - minHeight) * 0.3f, heightBias);
+		float effectiveMaxHeight = glm::mix(maxHeight - (maxHeight - minHeight) * 0.3f, maxHeight, heightBias);
+
+		float targetY = effectiveMinHeight + cyclePos * (effectiveMaxHeight - effectiveMinHeight);
+
+		// Gentle horizontal drift
+		float driftTime = glfwGetTime() * 0.3f + blob.heatPhase * 10.0f;
+		float anchorX = cos(driftTime) * 0.4f * m_radius;
+		float anchorZ = sin(driftTime) * 0.4f * m_radius;
+		blob.anchorPoint = glm::vec3(anchorX, targetY, anchorZ);
+
+		// === TEMPERATURE AFFECTS SPRING STRENGTH ===
+		// Hot blobs are more "energetic" (weaker anchor, more free-floating)
+		// Cold blobs are more "sluggish" (stronger anchor, stick to target)
+		float tempAnchorStrength = glm::mix(1.5f, 0.8f, tempFactor); // Stronger when cold
+
+		// === FORCES ===
+		glm::vec3 toAnchor = blob.anchorPoint - blob.position;
+		glm::vec3 springForce = toAnchor * m_springConstant * tempAnchorStrength;
+
+		// Temperature affects damping: hot = less damping (more fluid), cold = more damping (more viscous)
+		float tempDamping = glm::mix(m_dampingConstant * 1.3f, m_dampingConstant * 0.7f, tempFactor);
+		glm::vec3 dampingForce = -blob.velocity * tempDamping;
+
+		// Repulsion from all other blobs
+		glm::vec3 repulsionForce(0.0f);
+		for (size_t j = 0; j < m_blobs.size(); ++j) {
+			if (i == j) continue;
+
+			glm::vec3 toOther = blob.position - m_blobs[j].position;
+			float dist = glm::length(toOther);
+
+			if (dist < 0.01f) {
+				toOther = glm::vec3(m_randomDist(m_rng), m_randomDist(m_rng), m_randomDist(m_rng));
+				dist = 0.1f;
+			}
+
+			float minDist = (blob.radius + m_blobs[j].radius) * m_repulsionRange;
+
+			if (dist < minDist) {
+				float repulsionMag = m_repulsionStrength * (1.0f - dist / minDist);
+				repulsionMag = repulsionMag * repulsionMag;
+				repulsionForce += (toOther / dist) * repulsionMag;
+			}
+		}
+
+		// Total force
+		glm::vec3 totalForce = springForce + dampingForce + repulsionForce;
+
+		// Integrate
+		glm::vec3 oldVelocity = blob.velocity;
+		blob.velocity += totalForce * deltaTime;
+		blob.position += (oldVelocity + blob.velocity) * 0.5f * deltaTime;
+
+		// Boundaries
+		applyBoundaryConditions(blob);
 	}
 
-	// interactions & topological operations
-	handleBlobInteractions();
+	// Merge/split operations
 	mergeBlobsIfClose();
 	splitLargeBlobs();
 }
 
+
 void LavaLamp::updateBlobPhysics(LavaBlob& blob, float dt) {
-	// Heat diffusion - GRADIENT based (not step function)
-	// Blobs closer to bottom heat faster
-	float distFromHeater = glm::max(0.0f, blob.position.y - m_baseHeight);
-	float heatZone = 2.0f; // heating influence extends 2 units up
-	float heatFactor = glm::clamp(1.0f - (distFromHeater / heatZone), 0.0f, 1.0f);
+	// Update heat phase (continuous cycle 0->1->0)
+	blob.heatPhase += blob.cycleSpeed * dt * 0.1f; // Slow cycle
+	if (blob.heatPhase > 1.0f) blob.heatPhase -= 1.0f;
 
-	float targetTemp = m_ambientTemp + heatFactor * (m_heaterTemp - m_ambientTemp);
-	blob.temperature += (targetTemp - blob.temperature) * 0.8f * dt; // fast diffusion
+	// Update temperature based on position (for visual effect only)
+	float distFromBottom = blob.position.y - m_baseHeight;
+	float heightFrac = distFromBottom / (m_height - m_baseHeight);
+	blob.temperature = m_ambientTemp + (1.0f - heightFrac) * (m_heaterTemp - m_ambientTemp);
 
-	// CORRECTED BUOYANCY: Archimedes principle
-	// Hot blobs are less dense -> float upward
-	float tempFactor = glm::clamp((blob.temperature - m_ambientTemp) / (m_heaterTemp - m_ambientTemp), 0.0f, 1.0f);
+	// Calculate anchor point position based on heat phase
+	// Uses smooth sine wave for natural motion
+	float cyclePos = sin(blob.heatPhase * 2.0f * glm::pi<float>()) * 0.5f + 0.5f; // 0 to 1 and back
+	float targetY = m_baseHeight + blob.radius + cyclePos * (m_height - m_baseHeight - 2.0f * blob.radius);
 
-	// Density decreases with temperature (thermal expansion)
-	float densityRatio = 1.0f - 0.15f * tempFactor; // hot blobs are 15% less dense
+	// Gentle horizontal drift for anchor point
+	float driftTime = glfwGetTime() * 0.3f + blob.heatPhase * 10.0f;
+	float anchorX = cos(driftTime) * 0.4f * m_radius;
+	float anchorZ = sin(driftTime) * 0.4f * m_radius;
 
-	// Buoyant force = (ambient_density - blob_density) * volume * gravity
-	// Simplified: use density ratio directly
-	float buoyancy = (1.0f - densityRatio) * (-m_gravity) * 12.0f; // strong effect
+	blob.anchorPoint = glm::vec3(anchorX, targetY, anchorZ);
 
-	// Basic forces
-	glm::vec3 acceleration(0.0f);
-	acceleration.y += m_gravity * densityRatio; // gravity scales with density
-	acceleration.y += buoyancy;
+	// Spring force toward anchor point (Hooke's law)
+	glm::vec3 toAnchor = blob.anchorPoint - blob.position;
+	glm::vec3 springForce = toAnchor * m_springConstant * blob.anchorStrength;
 
-	// DRAG FORCE (not viscosity damping)
-	// Stokes drag: F = 6π * viscosity * radius * velocity
-	// Simplified: drag proportional to velocity and blob size
-	float fluidViscosity = 0.3f * (1.0f + 0.5f * tempFactor); // less viscous when hot
-	glm::vec3 drag = -blob.velocity * (fluidViscosity * blob.radius * 2.0f);
-	acceleration += drag;
+	// Damping force (opposes velocity)
+	glm::vec3 dampingForce = -blob.velocity * m_dampingConstant;
 
-	// Turbulence (curl noise would be better, but Perlin is fine)
-	float noiseScale = 0.3f;
-	float time = glfwGetTime() * 0.5f; // use global time for animation
-	glm::vec3 noiseVec(
-		glm::perlin(blob.position * noiseScale + glm::vec3(time, 0.0f, 0.0f)),
-		glm::perlin(blob.position * noiseScale + glm::vec3(0.0f, time, 100.0f)),
-		glm::perlin(blob.position * noiseScale + glm::vec3(200.0f, 0.0f, time))
-	);
-	acceleration += noiseVec * 1.2f;
+	// Repulsion from other blobs (prevents overlap)
+	glm::vec3 repulsionForce = computeRepulsionForce(blob, 0); // Index computed in loop below
 
-	// Integrate (semi-implicit Euler for stability)
+	// Total acceleration
+	glm::vec3 totalForce = springForce + dampingForce + repulsionForce;
+	glm::vec3 acceleration = totalForce; // Assume unit mass
+
+	// Integrate velocity and position (Verlet integration for stability)
+	glm::vec3 oldVelocity = blob.velocity;
 	blob.velocity += acceleration * dt;
-	blob.velocity *= 0.98f; // gentle global damping for stability
-	blob.position += blob.velocity * dt;
+	blob.position += (oldVelocity + blob.velocity) * 0.5f * dt; // Average velocity
 
-	// Boundary handling
+	// Apply soft boundary conditions
 	applyBoundaryConditions(blob);
 }
 
+glm::vec3 LavaLamp::computeRepulsionForce(const LavaBlob& blob, size_t blobIndex) {
+	glm::vec3 totalRepulsion(0.0f);
+
+	for (size_t i = 0; i < m_blobs.size(); ++i) {
+		if (i == blobIndex) continue; // Can't repel self
+
+		glm::vec3 toOther = blob.position - m_blobs[i].position;
+		float dist = glm::length(toOther);
+
+		if (dist < 0.01f) {
+			// Blobs too close, apply random nudge
+			toOther = glm::vec3(
+				m_randomDist(m_rng),
+				m_randomDist(m_rng),
+				m_randomDist(m_rng)
+			);
+			dist = 0.1f;
+		}
+
+		float minDist = (blob.radius + m_blobs[i].radius) * m_repulsionRange;
+
+		if (dist < minDist) {
+			// Soft repulsion using inverse square (like charges)
+			float repulsionMag = m_repulsionStrength * (1.0f - dist / minDist);
+			repulsionMag = repulsionMag * repulsionMag; // Square for stronger effect when close
+
+			totalRepulsion += (toOther / dist) * repulsionMag;
+		}
+	}
+
+	return totalRepulsion;
+}
+
 void LavaLamp::applyBoundaryConditions(LavaBlob& blob) {
-	// Cylindrical boundary (x,z) and caps (y)
+	// Cylindrical boundary using spring-like soft constraints
 	float distFromCenter = sqrt(blob.position.x * blob.position.x + blob.position.z * blob.position.z);
+	float maxDist = m_radius - blob.radius - 0.05f;
 
-	if (distFromCenter + blob.radius > m_radius) {
-		// push back inside
-		if (distFromCenter > 1e-6f) {
-			glm::vec2 xz(blob.position.x, blob.position.z);
-			xz = glm::normalize(xz) * (m_radius - blob.radius - 1e-3f);
-			blob.position.x = xz.x;
-			blob.position.z = xz.y;
+	if (distFromCenter > maxDist) {
+		// Soft spring force back to boundary
+		glm::vec2 xz(blob.position.x, blob.position.z);
+		glm::vec2 dir = glm::normalize(xz);
+		float penetration = distFromCenter - maxDist;
+
+		// Gradual correction (not instant snap)
+		glm::vec2 correction = -dir * penetration * 0.3f; // Weak spring
+		blob.position.x += correction.x;
+		blob.position.z += correction.y;
+
+		// Velocity damping at boundary
+		glm::vec2 vel2d(blob.velocity.x, blob.velocity.z);
+		float radialVel = glm::dot(vel2d, dir);
+		if (radialVel > 0.0f) {
+			// Dampen outward velocity
+			vel2d -= dir * radialVel * 0.8f;
+			blob.velocity.x = vel2d.x;
+			blob.velocity.z = vel2d.y;
 		}
-		else {
-			// if exactly center, nudge randomly
-			blob.position.x = (m_randomDist(m_rng)) * (m_radius - blob.radius - 1e-3f);
-			blob.position.z = (m_randomDist(m_rng)) * (m_radius - blob.radius - 1e-3f);
-		}
-		blob.velocity *= 0.6f;
 	}
 
-	// bottom: clamp to m_baseHeight (glass bottom in mesh)
-	if (blob.position.y - blob.radius < m_baseHeight) {
-		blob.position.y = m_baseHeight + blob.radius;
-		blob.velocity.y = fabs(blob.velocity.y) * 0.4f;
+	// Vertical boundaries with soft springs
+	float minY = m_baseHeight + blob.radius;
+	float maxY = m_height - blob.radius;
+
+	if (blob.position.y < minY) {
+		float penetration = minY - blob.position.y;
+		blob.position.y += penetration * 0.3f; // Soft spring
+		if (blob.velocity.y < 0.0f) {
+			blob.velocity.y *= -0.3f; // Gentle bounce with damping
+		}
 	}
 
-	// top
-	if (blob.position.y + blob.radius > m_height) {
-		blob.position.y = m_height - blob.radius;
-		blob.velocity.y = -fabs(blob.velocity.y) * 0.4f;
+	if (blob.position.y > maxY) {
+		float penetration = blob.position.y - maxY;
+		blob.position.y -= penetration * 0.3f;
+		if (blob.velocity.y > 0.0f) {
+			blob.velocity.y *= -0.3f;
+		}
 	}
 }
 
 void LavaLamp::handleBlobInteractions() {
-	// soft collisions / repulsion
+	// Minimal repulsion - metaballs handle visual merging, we just prevent 
+	// blobs from occupying the exact same position
 	for (size_t i = 0; i < m_blobs.size(); ++i) {
 		for (size_t j = i + 1; j < m_blobs.size(); ++j) {
 			glm::vec3 diff = m_blobs[i].position - m_blobs[j].position;
 			float d = glm::length(diff);
-			float minDist = (m_blobs[i].radius + m_blobs[j].radius) * 0.9f;
+			float sumRadii = m_blobs[i].radius + m_blobs[j].radius;
 
-			if (d > 1e-5f && d < minDist) {
+			// Very gentle repulsion only when centers are extremely close
+			// Metaballs will visually merge them smoothly anyway
+			if (d > 1e-5f && d < sumRadii * 0.3f) {
 				glm::vec3 dir = diff / d;
-				float overlap = minDist - d;
-				glm::vec3 force = dir * (overlap * 0.05f);
-				m_blobs[i].velocity += force * 0.5f;
-				m_blobs[j].velocity -= force * 0.5f;
+
+				// Extremely gentle soft repulsion force
+				float overlap = sumRadii * 0.3f - d;
+				float repulsionStrength = overlap / (sumRadii * 0.3f);
+
+				// Very weak force - just prevent exact overlap
+				float force = repulsionStrength * repulsionStrength * 0.2f;
+
+				m_blobs[i].velocity += dir * force;
+				m_blobs[j].velocity -= dir * force;
 			}
 		}
 	}
 }
 
 float LavaLamp::computeDensityField(const glm::vec3& point) const {
-	float density = 0.0f;
+	float fieldSum = 0.0f;
 	for (const auto& blob : m_blobs) {
-		float r2 = distance_squared(point, blob.position);
-		float R2 = blob.radius * blob.radius;
-		if (R2 <= 0.0f) continue;
+		float dist = glm::length(point - blob.position);
+		float radius = blob.radius;
 
-		float a = -blob.blobbiness / R2;
-		// clamp to avoid blowups
-		a = glm::max(a, 0.0001f);
-		float contribution = exp(-a * r2 + blob.blobbiness);
-		density += contribution;
+		if (radius <= 0.0f) continue;
+
+		// Prevent division by zero
+		dist = glm::max(dist, 0.01f);
+
+		// Classic metaball formula: (r^2/d^2)^2
+		float normalizedDist = radius / dist;
+		float contribution = normalizedDist * normalizedDist;
+		contribution = contribution * contribution;
+
+		fieldSum += contribution;
 	}
-	return density;
+	return fieldSum;
 }
 
 glm::vec3 LavaLamp::computeDensityGradient(const glm::vec3& point) const {
-	glm::vec3 gradient(0.0f);
-	for (const auto& blob : m_blobs) {
-		glm::vec3 diff = point - blob.position;
-		float r2 = glm::dot(diff, diff);
-		float R2 = blob.radius * blob.radius;
-		if (R2 <= 0.0f) continue;
-
-		float a = -blob.blobbiness / R2;
-		a = glm::max(a, 0.0001f);
-		float contribution = exp(-a * r2 + blob.blobbiness);
-		gradient += -2.0f * a * diff * contribution;
-	}
-	return gradient;
+	const float eps = 0.01f;
+	float dx = computeDensityField(point + glm::vec3(eps, 0, 0)) - computeDensityField(point - glm::vec3(eps, 0, 0));
+	float dy = computeDensityField(point + glm::vec3(0, eps, 0)) - computeDensityField(point - glm::vec3(0, eps, 0));
+	float dz = computeDensityField(point + glm::vec3(0, 0, eps)) - computeDensityField(point - glm::vec3(0, 0, eps));
+	return glm::vec3(dx, dy, dz);
 }
 
 void LavaLamp::mergeBlobsIfClose() {
-	const float baseMergeDist = 0.4f;
 	for (size_t i = 0; i < m_blobs.size(); ++i) {
-		// Calculate blobbiness factor for blob i
-		float blobbinessFactor = glm::clamp(-m_blobs[i].blobbiness / 0.5f, 0.5f, 2.0f);
-		float mergeDist = baseMergeDist * blobbinessFactor;
-
 		for (size_t j = i + 1; j < m_blobs.size(); ++j) {
 			float dist = glm::distance(m_blobs[i].position, m_blobs[j].position);
 			float combinedRadius = m_blobs[i].radius + m_blobs[j].radius;
 
-			// Merge threshold scales with blob sizes
-			if (dist < mergeDist * combinedRadius && dist > 1e-5f) {
-				// conserve approximate volume (radius^3)
+			// Merge if very close and moving in similar direction
+			glm::vec3 relVel = m_blobs[i].velocity - m_blobs[j].velocity;
+			bool closeEnough = dist < combinedRadius * 0.5f;
+			bool similarMotion = glm::length(relVel) < 0.3f;
+
+			// Also check if in similar phase (prevents merging opposite-direction blobs)
+			float phaseDiff = abs(m_blobs[i].heatPhase - m_blobs[j].heatPhase);
+			if (phaseDiff > 0.5f) phaseDiff = 1.0f - phaseDiff; // Wrap around
+			bool similarPhase = phaseDiff < 0.3f;
+
+			if (closeEnough && similarMotion && similarPhase) {
+				// Volume-conserving merge
 				float vol1 = pow(m_blobs[i].radius, 3.0f);
 				float vol2 = pow(m_blobs[j].radius, 3.0f);
 				float newRadius = pow(vol1 + vol2, 1.0f / 3.0f);
@@ -241,10 +417,16 @@ void LavaLamp::mergeBlobsIfClose() {
 				float w1 = vol1 / (vol1 + vol2);
 				float w2 = vol2 / (vol1 + vol2);
 
+				// Weighted averaging
 				m_blobs[i].position = m_blobs[i].position * w1 + m_blobs[j].position * w2;
-				m_blobs[i].velocity = m_blobs[i].velocity * w1 + m_blobs[j].velocity * w2;
+				m_blobs[i].velocity = (m_blobs[i].velocity * w1 + m_blobs[j].velocity * w2) * 0.9f;
+				m_blobs[i].anchorPoint = m_blobs[i].anchorPoint * w1 + m_blobs[j].anchorPoint * w2;
 				m_blobs[i].radius = newRadius;
 				m_blobs[i].temperature = m_blobs[i].temperature * w1 + m_blobs[j].temperature * w2;
+				m_blobs[i].heatPhase = m_blobs[i].heatPhase * w1 + m_blobs[j].heatPhase * w2;
+				m_blobs[i].cycleSpeed = m_blobs[i].cycleSpeed * w1 + m_blobs[j].cycleSpeed * w2;
+				m_blobs[i].color = m_blobs[i].color * w1 + m_blobs[j].color * w2;
+				m_blobs[i].blobbiness = m_blobs[i].blobbiness * w1 + m_blobs[j].blobbiness * w2;
 
 				m_blobs.erase(m_blobs.begin() + j);
 				--j;
@@ -254,55 +436,52 @@ void LavaLamp::mergeBlobsIfClose() {
 }
 
 void LavaLamp::splitLargeBlobs() {
-	// Hotter blobs have lower surface tension -> split easier
-	const float coldMaxRadius = 1.8f;  // Let cold blobs get bigger
-	const float hotMaxRadius = 1.3f;   // Hot blobs still split, but not too aggressively
-
+	const float maxRadius = 1.0f;
 	size_t originalSize = m_blobs.size();
 
 	for (size_t i = 0; i < originalSize; ++i) {
-		float tempFactor = glm::clamp(
-			(m_blobs[i].temperature - m_ambientTemp) / (m_heaterTemp - m_ambientTemp),
-			0.0f, 1.0f
-		);
-
-		// Interpolate threshold based on temperature
-		float maxRadius = glm::mix(coldMaxRadius, hotMaxRadius, tempFactor);
-
 		if (m_blobs[i].radius > maxRadius) {
-			float childVolumeFraction = 0.2f + m_randomDist(m_rng) * 0.1f; // 0.2-0.3
+			// 50-50 split for balance
 			float parentVol = pow(m_blobs[i].radius, 3.0f);
-			float childVol = parentVol * childVolumeFraction;
+			float childVol = parentVol * 0.5f;
 
 			float childRadius = pow(childVol, 1.0f / 3.0f);
-			float parentRadius = pow(parentVol - childVol, 1.0f / 3.0f);
+			float parentRadius = childRadius;
 
-			// Random offset direction (not just upward)
-			glm::vec3 splitDir = glm::normalize(glm::vec3(
-				m_randomDist(m_rng),
-				0.5f + 0.5f * tempFactor, // bias upward when hot
-				m_randomDist(m_rng)
-			));
+			// Split perpendicular to motion direction (creates natural separation)
+			glm::vec3 motionDir = glm::normalize(m_blobs[i].velocity);
+			glm::vec3 perpDir = glm::vec3(-motionDir.z, 0.0f, motionDir.x); // Perpendicular in XZ plane
+			if (glm::length(perpDir) < 0.1f) {
+				perpDir = glm::vec3(1.0f, 0.0f, 0.0f); // Fallback
+			}
+			else {
+				perpDir = glm::normalize(perpDir);
+			}
 
-			// Offset distance based on combined radii
-			float separation = (childRadius + parentRadius) * 1.2f;
-			glm::vec3 offset = splitDir * separation;
+			float separation = (childRadius + parentRadius) * 1.05f;
 
 			// Create child blob
 			LavaBlob child = m_blobs[i];
 			child.radius = childRadius;
-			child.position = m_blobs[i].position + offset;
-			child.velocity = m_blobs[i].velocity + splitDir * (0.3f + 0.5f * tempFactor);
-			// Inherit slightly cooler temp (surface was cooler)
-			child.temperature = m_blobs[i].temperature - 2.0f;
+			child.position = m_blobs[i].position + perpDir * separation;
+			child.velocity = m_blobs[i].velocity; // Inherit velocity (spring will separate them)
+			child.heatPhase += 0.1f; // Slightly offset phase
+			if (child.heatPhase > 1.0f) child.heatPhase -= 1.0f;
+			child.cycleSpeed = m_blobs[i].cycleSpeed + m_randomDist(m_rng) * 0.1f; // Vary cycle speed
 
 			// Update parent
 			m_blobs[i].radius = parentRadius;
-			m_blobs[i].velocity -= splitDir * (0.1f * childVolumeFraction); // recoil
+			m_blobs[i].position -= perpDir * separation * 0.5f; // Move slightly away too
 
 			m_blobs.push_back(child);
 		}
 	}
+}
+
+// Dummy helper (anchor points update automatically)
+void LavaLamp::updateAnchorPoints(float dt) {
+	// Anchor points are computed per-blob based on their heat phase
+	// No global update needed in this design
 }
 
 void LavaLamp::addBlob(const glm::vec3& position, float radius) {
