@@ -660,6 +660,9 @@ void Application::render() {
 	// Render lava lamp
 	//renderLavaLamp(view, proj);
 
+	renderTempCube(view, proj);
+
+
 	// draw the original model (if desired)
 	//m_model.draw(view, proj);
 }
