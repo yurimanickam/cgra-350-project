@@ -15,14 +15,18 @@ SET(sources
 	"skeleton_model.hpp"
 	"skeleton_model.cpp"
 
-	"lava_lamp.hpp"
-	"lava_lamp.cpp"
-	
+
 	"opengl.hpp"
 
 	"main.cpp"
 
 	"CMakeLists.txt"
+
+    	"yuri/station.cpp"
+    	"yuri/station.hpp"
+
+	"david/lava_lamp.cpp"
+	"david/lava_lamp.hpp"
 )
 
 # Add executable target and link libraries

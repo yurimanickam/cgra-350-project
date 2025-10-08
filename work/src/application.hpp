@@ -8,7 +8,11 @@
 #include "opengl.hpp"
 #include "cgra/cgra_mesh.hpp"
 #include "skeleton_model.hpp"
-#include "lava_lamp.hpp" // Add this include
+
+//teammate includes
+#include "david/lava_lamp.hpp"
+
+#include "yuri/station.hpp"
 
 // Basic model that holds the shader, mesh and transform for drawing.
 // Can be copied and modified for adding in extra information for drawing
@@ -21,6 +25,15 @@ struct basic_model {
 	GLuint texture;
 
 	void draw(const glm::mat4& view, const glm::mat4 proj);
+};
+
+// texture data struct
+struct textureData {
+	GLuint albedo = 0;
+	GLuint normal = 0;
+	GLuint metallic = 0;
+	GLuint roughness = 0;
+	GLuint ao = 0;
 };
 
 // Main application class
@@ -82,6 +95,27 @@ private:
 	// Depth FBO helper
 	void ensureDepthFBO(int width, int height);
 
+	// texture data
+	textureData gold;
+
+	// shaders
+	GLuint m_shader = 0;
+	GLuint m_default_shader = 0;
+	GLuint m_pbr_shader = 0;
+	GLuint m_cubemap_shader = 0;
+	GLuint m_irradiance_shader = 0;
+	GLuint m_prefilter_shader = 0;
+	GLuint m_brdf_shader = 0;
+	GLuint m_background_shader = 0;
+
+	int m_selected_shader = 0;
+
+	unsigned int irradianceMap;
+	unsigned int prefilterMap;
+	unsigned int brdfLUTTexture;
+	unsigned int envCubemap;
+	unsigned int hdrTexture;
+
 public:
 	// setup
 	Application(GLFWwindow*);
@@ -100,4 +134,12 @@ public:
 	void scrollCallback(double xoffset, double yoffset);
 	void keyCallback(int key, int scancode, int action, int mods);
 	void charCallback(unsigned int c);
+
+	void loadPBRShaders();
+	GLuint loadTexture(char const* path);
+	textureData loadPBRTextures(const std::string& basePath);
+	void bindPBRTextures(const textureData& tex);
+	void renderCube();
+	void renderQuad();
+	void renderSphere();
 };
