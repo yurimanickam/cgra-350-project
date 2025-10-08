@@ -455,7 +455,11 @@ cgra::gl_mesh Application::createLampContainerMetal() {
 	return builder.build();
 }
 
+
+/// IMPORTANT to be fixed, render layers completely broken so fix
 void Application::renderLavaLamp(const glm::mat4& view, const glm::mat4& proj) {
+
+
 	if (!m_showLavaLamp) return;
 
 
