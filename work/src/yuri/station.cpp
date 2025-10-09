@@ -315,10 +315,12 @@ LSystemParams createStandardStationParams() {
     params.radiusScale = 0.75f;
     params.branchAngle = 90.0f;
     
-    // Rules for a standard space station
-    // A = main corridor, branches perpendicular
-    params.rules.push_back({'A', "F[+A][-A][&A][^A]", 1.0f});
-    params.rules.push_back({'F', "FF", 0.8f});
+    // Rules for a standard space station with multiple branches
+    // A = main hub with 6 perpendicular branches (up, down, left, right, forward, back)
+    params.rules.push_back({ 'A', "F[+A][-A][&A][^A]A", 1.0f }); // recursive
+    params.rules.push_back({ 'F', "FF", 0.8f }); // optional: makes segments longer
+
+    return params;
     
     return params;
 }
@@ -331,9 +333,11 @@ LSystemParams createComplexStationParams() {
     params.radiusScale = 0.7f;
     params.branchAngle = 90.0f;
     
-    // More complex branching pattern
-    params.rules.push_back({'A', "F[+A][&A]F[-A][^A]", 1.0f});
-    params.rules.push_back({'F', "FF", 1.0f});
+    // More complex branching with 8 directions
+    params.rules.push_back({ 'A', "F[+A][-A][&A][^A][\\A][/A]A", 1.0f });
+    params.rules.push_back({ 'F', "FA", 1.0f }); // every segment spawns a new branch
+
+    return params;
     
     return params;
 }
