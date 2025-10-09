@@ -214,8 +214,8 @@ std::vector<StationModule> interpretLSystemToStation(
     std::stack<TurtleState> stateStack;
     
     TurtleState turtle;
-    turtle.currentLength = 10.0f;
-    turtle.currentRadius = 1.5f;
+    turtle.currentLength = 6.0f;
+    turtle.currentRadius = 1.0f;
     turtle.position = glm::vec3(0.0f);
     turtle.direction = glm::vec3(1.0f, 0.0f, 0.0f);
     turtle.up = glm::vec3(0.0f, 1.0f, 0.0f);
