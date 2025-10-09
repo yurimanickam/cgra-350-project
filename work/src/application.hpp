@@ -64,9 +64,9 @@ private:
 	// Lava lamp components
 	LavaLamp m_lavaLamp;
 	GLuint m_lavaShader = 0;
-	cgra::gl_mesh m_lampGlassMesh;
-	cgra::gl_mesh m_lampMetalMesh;
-	cgra::gl_mesh m_fullscreenQuad; // Add fullscreen quad for raymarching
+	basic_model m_lampGlassModel;
+	basic_model m_lampMetalModel;
+	basic_model m_fullscreenQuadModel; // fullscreen quad for raymarching
 
 	GLuint m_depthFBO = 0;
 	GLuint m_depthTextureFront = 0; // depth from front faces
