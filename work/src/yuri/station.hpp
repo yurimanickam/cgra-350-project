@@ -7,14 +7,14 @@
 
 // Holds mesh and transform for each cylinder module
 struct StationModule {
-    unsigned int vao = 0, vbo = 0;
+    unsigned int vao = 0, vbo = 0, ebo = 0; // Add ebo
     glm::mat4 model = glm::mat4(1.0f);
-    glm::vec3 color = glm::vec3(0.2, 0.7, 1.0); // default (unused by PBR)
+    glm::vec3 color = glm::vec3(0.2, 0.7, 1.0);
     float length = 1.0f;
-    float radius = 0.5f;
-    int generation = 0; // L-system generation level
-    
-    // Type identifiers for different module types
+    float radius = 5.0f;
+    int generation = 0;
+    unsigned int indexCount = 0; // Add index count
+
     enum ModuleType {
         MAIN_CORRIDOR,
         HABITAT_MODULE,

@@ -10,69 +10,55 @@
 // Create a cylinder mesh for space station modules
 void createCylinderMesh(StationModule& module, float length, float radius, int segments) {
     std::vector<float> vertices;
+    std::vector<unsigned int> indices;
     const float halfLength = length / 2.0f;
-    
-    // Generate cylinder vertices (position, normal, uv)
+
+    // Generate side vertices (cylinder body)
     for (int ring = 0; ring <= 1; ++ring) {
         float z = ring == 0 ? -halfLength : halfLength;
-        
+
         for (int i = 0; i <= segments; ++i) {
             float theta = (float)i / (float)segments * 2.0f * glm::pi<float>();
             float x = radius * cos(theta);
             float y = radius * sin(theta);
-            
+
             // Position
             vertices.push_back(x);
             vertices.push_back(y);
             vertices.push_back(z);
-            
+
             // Normal (pointing outward)
             glm::vec3 normal = glm::normalize(glm::vec3(x, y, 0.0f));
             vertices.push_back(normal.x);
             vertices.push_back(normal.y);
             vertices.push_back(normal.z);
-            
+
             // UV
             vertices.push_back((float)i / (float)segments);
             vertices.push_back((float)ring);
         }
     }
-    
-    // Add cap vertices (front cap)
-    glm::vec3 frontNormal(0.0f, 0.0f, -1.0f);
-    for (int i = 0; i <= segments; ++i) {
-        float theta = (float)i / (float)segments * 2.0f * glm::pi<float>();
-        float x = radius * cos(theta);
-        float y = radius * sin(theta);
-        
-        vertices.push_back(x);
-        vertices.push_back(y);
-        vertices.push_back(-halfLength);
-        vertices.push_back(frontNormal.x);
-        vertices.push_back(frontNormal.y);
-        vertices.push_back(frontNormal.z);
-        vertices.push_back((float)i / (float)segments);
-        vertices.push_back(0.0f);
+
+    // Generate indices for cylinder sides
+    for (int i = 0; i < segments; ++i) {
+        int bottomLeft = i;
+        int bottomRight = i + 1;
+        int topLeft = i + (segments + 1);
+        int topRight = i + 1 + (segments + 1);
+
+        // First triangle
+        indices.push_back(bottomLeft);
+        indices.push_back(topLeft);
+        indices.push_back(bottomRight);
+
+        // Second triangle
+        indices.push_back(bottomRight);
+        indices.push_back(topLeft);
+        indices.push_back(topRight);
     }
-    
-    // Add cap vertices (back cap)
-    glm::vec3 backNormal(0.0f, 0.0f, 1.0f);
-    for (int i = 0; i <= segments; ++i) {
-        float theta = (float)i / (float)segments * 2.0f * glm::pi<float>();
-        float x = radius * cos(theta);
-        float y = radius * sin(theta);
-        
-        vertices.push_back(x);
-        vertices.push_back(y);
-        vertices.push_back(halfLength);
-        vertices.push_back(backNormal.x);
-        vertices.push_back(backNormal.y);
-        vertices.push_back(backNormal.z);
-        vertices.push_back((float)i / (float)segments);
-        vertices.push_back(1.0f);
-    }
-    
-    // Center points for caps
+
+    // Add front cap center vertex
+    int frontCenterIndex = vertices.size() / 8; // 8 floats per vertex
     vertices.push_back(0.0f);
     vertices.push_back(0.0f);
     vertices.push_back(-halfLength);
@@ -81,7 +67,33 @@ void createCylinderMesh(StationModule& module, float length, float radius, int s
     vertices.push_back(-1.0f);
     vertices.push_back(0.5f);
     vertices.push_back(0.5f);
-    
+
+    // Add front cap edge vertices
+    int frontCapStart = vertices.size() / 8;
+    for (int i = 0; i <= segments; ++i) {
+        float theta = (float)i / (float)segments * 2.0f * glm::pi<float>();
+        float x = radius * cos(theta);
+        float y = radius * sin(theta);
+
+        vertices.push_back(x);
+        vertices.push_back(y);
+        vertices.push_back(-halfLength);
+        vertices.push_back(0.0f);
+        vertices.push_back(0.0f);
+        vertices.push_back(-1.0f);
+        vertices.push_back((float)i / (float)segments);
+        vertices.push_back(0.0f);
+    }
+
+    // Generate front cap indices
+    for (int i = 0; i < segments; ++i) {
+        indices.push_back(frontCenterIndex);
+        indices.push_back(frontCapStart + i);
+        indices.push_back(frontCapStart + i + 1);
+    }
+
+    // Add back cap center vertex
+    int backCenterIndex = vertices.size() / 8;
     vertices.push_back(0.0f);
     vertices.push_back(0.0f);
     vertices.push_back(halfLength);
@@ -90,19 +102,56 @@ void createCylinderMesh(StationModule& module, float length, float radius, int s
     vertices.push_back(1.0f);
     vertices.push_back(0.5f);
     vertices.push_back(0.5f);
-    
+
+    // Add back cap edge vertices
+    int backCapStart = vertices.size() / 8;
+    for (int i = 0; i <= segments; ++i) {
+        float theta = (float)i / (float)segments * 2.0f * glm::pi<float>();
+        float x = radius * cos(theta);
+        float y = radius * sin(theta);
+
+        vertices.push_back(x);
+        vertices.push_back(y);
+        vertices.push_back(halfLength);
+        vertices.push_back(0.0f);
+        vertices.push_back(0.0f);
+        vertices.push_back(1.0f);
+        vertices.push_back((float)i / (float)segments);
+        vertices.push_back(1.0f);
+    }
+
+    // Generate back cap indices
+    for (int i = 0; i < segments; ++i) {
+        indices.push_back(backCenterIndex);
+        indices.push_back(backCapStart + i + 1);
+        indices.push_back(backCapStart + i);
+    }
+
+    // Clean up old buffers
     if (module.vao != 0) {
         glDeleteVertexArrays(1, &module.vao);
         glDeleteBuffers(1, &module.vbo);
+        if (module.ebo != 0) {
+            glDeleteBuffers(1, &module.ebo);
+        }
     }
-    
+
+    // Create new buffers
     glGenVertexArrays(1, &module.vao);
     glGenBuffers(1, &module.vbo);
-    
+    glGenBuffers(1, &module.ebo);
+
     glBindVertexArray(module.vao);
+
+    // Upload vertex data
     glBindBuffer(GL_ARRAY_BUFFER, module.vbo);
     glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_STATIC_DRAW);
-    
+
+    // Upload index data
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, module.ebo);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int), indices.data(), GL_STATIC_DRAW);
+
+    // Set up vertex attributes
     // Position attribute
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
@@ -112,11 +161,12 @@ void createCylinderMesh(StationModule& module, float length, float radius, int s
     // UV attribute
     glEnableVertexAttribArray(2);
     glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
-    
+
     glBindVertexArray(0);
-    
+
     module.length = length;
     module.radius = radius;
+    module.indexCount = indices.size(); // Store index count for rendering
 }
 
 // L-System string generation
@@ -335,40 +385,33 @@ std::vector<StationModule> generateProceduralStation(
 
 // Render station modules with PBR
 void renderStationModulesPBR(
-    const std::vector<StationModule>& modules, 
-    const glm::mat4& view, 
-    const glm::mat4& proj, 
-    unsigned int pbrShader) 
+    const std::vector<StationModule>& modules,
+    const glm::mat4& view,
+    const glm::mat4& proj,
+    unsigned int pbrShader)
 {
     glUseProgram(pbrShader);
-    
+
     GLint locProj = glGetUniformLocation(pbrShader, "projection");
     GLint locView = glGetUniformLocation(pbrShader, "view");
     if (locProj != -1) glUniformMatrix4fv(locProj, 1, GL_FALSE, glm::value_ptr(proj));
     if (locView != -1) glUniformMatrix4fv(locView, 1, GL_FALSE, glm::value_ptr(view));
-    
+
     for (const StationModule& module : modules) {
         glm::mat4 model = module.model;
         glm::mat3 normalMatrix = glm::transpose(glm::inverse(glm::mat3(model)));
-        
+
         GLint locModel = glGetUniformLocation(pbrShader, "model");
         GLint locNormal = glGetUniformLocation(pbrShader, "normalMatrix");
         if (locModel != -1) glUniformMatrix4fv(locModel, 1, GL_FALSE, glm::value_ptr(model));
         if (locNormal != -1) glUniformMatrix3fv(locNormal, 1, GL_FALSE, glm::value_ptr(normalMatrix));
-        
+
         glBindVertexArray(module.vao);
-        
-        // Calculate vertex count based on segments (this is approximate - should be calculated properly)
-        int segments = 32;
-        int vertexCount = (segments + 1) * 2 + (segments + 1) * 2 + 2; // Body + caps + centers
-        
-        // Draw cylinder body as triangle strip
-        glDrawArrays(GL_TRIANGLE_STRIP, 0, (segments + 1) * 2);
-        
-        // Draw caps as triangle fans (simplified - would need proper indexing for production)
-        // For now, just draw as lines to show structure
+
+        // Draw using indices
+        glDrawElements(GL_TRIANGLES, module.indexCount, GL_UNSIGNED_INT, 0);
     }
-    
+
     glBindVertexArray(0);
     glUseProgram(0);
 }
