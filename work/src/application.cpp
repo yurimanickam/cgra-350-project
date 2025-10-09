@@ -827,6 +827,7 @@ void Application::render() {
 		std::cout << "Generated " << allGreebles.size() << " total greebles" << std::endl;
 	}
 
+	renderGreeblesPBR(allGreebles, view, proj, m_pbr_shader);
 
 
 	// Optionally render legacy cubes
