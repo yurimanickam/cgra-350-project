@@ -116,8 +116,26 @@ private:
 	unsigned int envCubemap;
 	unsigned int hdrTexture;
 
-	bool m_UseSkybox = false;
+	bool m_UseSkybox = true;
 	bool m_UseSphere = false;
+
+	// Space Station parameters
+	int m_stationComplexity = 2; // 1=minimal, 2=standard, 3=complex
+	bool m_regenerateStation = true;
+	bool m_showLegacyCubes = false;
+	float m_stationSphereRadius = 10.0f;
+
+	int m_stationIterations = 3;
+	float m_stationLengthScale = 0.7f;
+	float m_stationRadiusScale = 0.75f;
+	float m_stationBranchAngle = 90.0f;
+	float m_stationBranchProbability = 0.8f; // NEW: Add this
+	float m_stationMainLength = 8.0f;
+	float m_stationMainRadius = 1.5f;
+	unsigned int m_stationRandomSeed = 0;
+	bool m_autoRandomSeed = false;  // ADD THIS LINE
+
+
 
 public:
 	// setup
