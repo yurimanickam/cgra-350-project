@@ -144,10 +144,19 @@ void Application::initializeLavaLamp() {
 	m_lavaLamp.setGravity(m_gravity);
 	// viscosity is automatic now; no setViscosity call
 
-	// Create lamp container mesh
-	m_lampGlassMesh = createLampContainerGlass();
-	m_lampMetalMesh = createLampContainerMetal();
-	m_fullscreenQuad = createFullscreenQuad();
+	// Create lamp container mesh (wrap meshes in basic_model so draw() sets shader + matrices)
+	m_lampGlassModel.mesh = createLampContainerGlass();
+	m_lampGlassModel.shader = m_lavaShader;
+	m_lampGlassModel.modelTransform = glm::mat4(1.0f);
+
+	m_lampMetalModel.mesh = createLampContainerMetal();
+	m_lampMetalModel.shader = m_lavaShader;
+	m_lampMetalModel.modelTransform = glm::mat4(1.0f);
+
+	m_fullscreenQuadModel.mesh = createFullscreenQuad();
+	m_fullscreenQuadModel.shader = m_lavaShader;
+	m_fullscreenQuadModel.modelTransform = glm::mat4(1.0f);
+
 
 	// Depth FBO will be created lazily in render (size depends on framebuffer)
 	m_depthFBO = 0;
@@ -455,7 +464,6 @@ cgra::gl_mesh Application::createLampContainerMetal() {
 	return builder.build();
 }
 
-/// IMPORTANT to be fixed, render layers completely broken so fix
 void Application::renderLavaLamp(const glm::mat4& view, const glm::mat4& proj) {
 
 
@@ -563,7 +571,8 @@ void Application::renderLavaLamp(const glm::mat4& view, const glm::mat4& proj) {
 
 	// Render opaque metal (writes depth)
 	glUniform1i(glGetUniformLocation(m_lavaShader, "uRenderMode"), 2);
-	m_lampMetalMesh.draw();
+	m_lampMetalModel.draw(view, proj);
+
 
 	// -------------------------
 	// PASS 2: Metaball raymarching (reads depth, writes color + depth)
@@ -580,8 +589,9 @@ void Application::renderLavaLamp(const glm::mat4& view, const glm::mat4& proj) {
 	glBindTexture(GL_TEXTURE_2D, m_depthTextureFront);
 	glUniform1i(glGetUniformLocation(m_lavaShader, "uDepthTexture"), 0);
 
-	m_fullscreenQuad.draw();
+	m_fullscreenQuadModel.draw(view, proj);
 	glUniform1i(glGetUniformLocation(m_lavaShader, "uIsFullscreenQuad"), 0);
+
 
 	// -------------------------
 	// PASS 3: Metal color pass (opaque, replaces depth-only metal)
@@ -590,7 +600,8 @@ void Application::renderLavaLamp(const glm::mat4& view, const glm::mat4& proj) {
 	glDepthMask(GL_FALSE); // Don't modify depth
 
 	glUniform1i(glGetUniformLocation(m_lavaShader, "uRenderMode"), 2);
-	m_lampMetalMesh.draw();
+	m_lampMetalModel.draw(view, proj);
+
 
 	// -------------------------
 	// PASS 4: Glass color pass (transparent blending)
@@ -601,7 +612,7 @@ void Application::renderLavaLamp(const glm::mat4& view, const glm::mat4& proj) {
 	glDepthFunc(GL_LEQUAL);
 
 	glUniform1i(glGetUniformLocation(m_lavaShader, "uRenderMode"), 0);
-	m_lampGlassMesh.draw();
+	m_lampGlassModel.draw(view, proj);
 
 	// Restore state
 	glDepthMask(GL_TRUE);
