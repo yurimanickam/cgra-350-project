@@ -86,34 +86,51 @@ void createCuboidMesh(BoundCube& cube, float length, float width, float height) 
 
 std::vector<BoundCube> scatterBoundCubes(
     int count,
-    const glm::vec3& bboxMin, const glm::vec3& bboxMax,
+    float sphereRadius,
     float length, float width, float height)
 {
     std::vector<BoundCube> cubes;
     std::mt19937 rng(static_cast<unsigned>(std::time(nullptr)));
-    std::uniform_real_distribution<float> dx(bboxMin.x, bboxMax.x);
-    std::uniform_real_distribution<float> dy(bboxMin.y, bboxMax.y);
-    std::uniform_real_distribution<float> dz(bboxMin.z, bboxMax.z);
-    std::uniform_real_distribution<float> rot(0, glm::two_pi<float>());
+
+    // Calculate the half-diagonal of the cube to determine if it fits
+    float cubeHalfDiagonal = glm::sqrt(length * length + width * width + height * height) / 2.0f;
+
+    // Maximum attempts to place a cube
+    const int maxAttempts = 100;
 
     for (int i = 0; i < count; ++i) {
-        BoundCube cube;
-        createCuboidMesh(cube, length, width, height);
+        bool placed = false;
 
-        // Random position and orientation
-        glm::vec3 pos(dx(rng), dy(rng), dz(rng));
-        float angle = rot(rng);
-        glm::vec3 axis = glm::normalize(glm::vec3(dx(rng), dy(rng), dz(rng)));
-        if (glm::length(axis) < 0.01f) axis = glm::vec3(0, 1, 0);
+        for (int attempt = 0; attempt < maxAttempts && !placed; ++attempt) {
+            // Generate random position
+            std::uniform_real_distribution<float> dist(-sphereRadius, sphereRadius);
+            glm::vec3 pos(dist(rng), dist(rng), dist(rng));
 
-        cube.model = glm::translate(glm::mat4(1.0f), pos)
-            * glm::rotate(glm::mat4(1.0f), angle, axis);
+            // Check if the cube center is within the sphere
+            float distanceFromCenter = glm::length(pos);
 
-        // Optional: random color (unused by PBR)
-        cube.color = glm::vec3(0.2f + 0.6f * float(i) / count, 0.7f, 1.0f - 0.5f * float(i) / count);
+            // Check if the entire cube (including corners) fits within the sphere
+            if (distanceFromCenter + cubeHalfDiagonal <= sphereRadius) {
+                BoundCube cube;
+                createCuboidMesh(cube, length, width, height);
 
-        cubes.push_back(cube);
+                // Set position without rotation
+                cube.model = glm::translate(glm::mat4(1.0f), pos);
+
+                // Optional: varied color based on position
+                cube.color = glm::vec3(0.2f + 0.6f * float(i) / count, 0.7f, 1.0f - 0.5f * float(i) / count);
+
+                cubes.push_back(cube);
+                placed = true;
+            }
+        }
+
+        // If we couldn't place the cube after max attempts, skip it
+        if (!placed) {
+            std::cout << "Warning: Could not place cube " << i << " within sphere bounds" << std::endl;
+        }
     }
+
     return cubes;
 }
 

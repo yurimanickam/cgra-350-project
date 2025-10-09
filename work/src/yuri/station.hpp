@@ -2,6 +2,7 @@
 
 #include <glm/glm.hpp>
 #include <vector>
+#include <iostream>
 
 // Holds mesh and transform for each box
 struct BoundCube {
@@ -15,10 +16,11 @@ struct BoundCube {
 // Layout: location 0 = position (vec3), location 1 = normal (vec3), location 2 = uv (vec2)
 void createCuboidMesh(BoundCube& cube, float length, float width, float height);
 
-// Make a collection of cuboids randomly distributed in a bounding box
+// Make a collection of cuboids randomly distributed within a bounding sphere
+// Now takes sphereRadius instead of bounding box min/max
 std::vector<BoundCube> scatterBoundCubes(
     int count,
-    const glm::vec3& bboxMin, const glm::vec3& bboxMax,
+    float sphereRadius,
     float length, float width, float height);
 
 // Render cuboids using a PBR shader (expects attributes at 0:pos, 1:norm, 2:uv).

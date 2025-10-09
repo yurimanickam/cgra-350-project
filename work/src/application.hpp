@@ -116,8 +116,11 @@ private:
 	unsigned int envCubemap;
 	unsigned int hdrTexture;
 
-	bool m_UseSkybox = false;
+	bool m_UseSkybox = true;
 	bool m_UseSphere = false;
+
+	float m_stationSphereRadius = 10.0f;
+	bool m_regenerateStation = false;
 
 public:
 	// setup

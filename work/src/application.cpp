@@ -712,11 +712,24 @@ void Application::render() {
 	// ----------------------------
 	static std::vector<BoundCube> spaceStationCubes;
 	static bool cubesInitialized = false;
+	static float lastSphereRadius = 10.0f;
 
-	if (!cubesInitialized) {
-		// Example: scatter 10 modules of 'Lab' size in a 10x10x10 box
-		spaceStationCubes = scatterBoundCubes(10, glm::vec3(-5, 0, -5), glm::vec3(5, 10, 5), 2.0f, 1.0f, 1.0f);
+	// Regenerate if requested or radius changed
+	if (!cubesInitialized || m_regenerateStation || lastSphereRadius != m_stationSphereRadius) {
+		// Clean up old cubes
+		for (auto& cube : spaceStationCubes) {
+			if (cube.vao != 0) {
+				glDeleteVertexArrays(1, &cube.vao);
+				glDeleteBuffers(1, &cube.vbo);
+			}
+		}
+		spaceStationCubes.clear();
+
+		// Generate new cubes within sphere
+		spaceStationCubes = scatterBoundCubes(10, m_stationSphereRadius, 2.0f, 1.0f, 1.0f);
 		cubesInitialized = true;
+		m_regenerateStation = false;
+		lastSphereRadius = m_stationSphereRadius;
 	}
 
 	// Use PBR shader and bind required textures regardless of other toggles
@@ -802,6 +815,16 @@ void Application::renderGUI() {
 	}
 
 	ImGui::Text("Current blob count: %d", m_lavaLamp.getBlobCount());
+
+	ImGui::Separator();
+	ImGui::Text("Space Station Controls");
+	if (ImGui::SliderFloat("Sphere Radius", &m_stationSphereRadius, 1.0f, 30.0f, "%.1f")) {
+		// Radius changed, will regenerate on next render
+	}
+	if (ImGui::Button("Regenerate Station")) {
+		m_regenerateStation = true;
+	}
+
 
 	// finish creating window
 	ImGui::End();
