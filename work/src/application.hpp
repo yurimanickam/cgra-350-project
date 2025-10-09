@@ -116,6 +116,9 @@ private:
 	unsigned int envCubemap;
 	unsigned int hdrTexture;
 
+	bool m_UseSkybox = false;
+	bool m_UseSphere = false;
+
 public:
 	// setup
 	Application(GLFWwindow*);

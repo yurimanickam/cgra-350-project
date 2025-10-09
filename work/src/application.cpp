@@ -645,11 +645,8 @@ void Application::render() {
 	glViewport(0, 0, width, height); // set the viewport to draw to the entire window
 
 	// clear the back-buffer
-	//glClearColor(0.1f, 0.1f, 0.15f, 1.0f); // Darker background for better lava lamp visibility
+	glClearColor(0.1f, 0.1f, 0.15f, 1.0f); // Darker background for better lava lamp visibility
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-	// pbr
-	glUseProgram(m_pbr_shader);
 
 	// projection matrix
 	mat4 proj = perspective(1.f, float(1280) / float(720), 0.1f, 100.f);
@@ -662,35 +659,44 @@ void Application::render() {
 		* rotate(mat4(1), m_pitch, vec3(1, 0, 0))
 		* rotate(mat4(1), m_yaw, vec3(0, 1, 0));
 
-	glUniformMatrix4fv(glGetUniformLocation(m_pbr_shader, "projection"), 1, GL_FALSE, value_ptr(proj));
-	glUniformMatrix4fv(glGetUniformLocation(m_pbr_shader, "view"), 1, GL_FALSE, value_ptr(view));
-	glUniform3fv(glGetUniformLocation(m_pbr_shader, "camPos"), 1, value_ptr(vec3(inverse(view) * vec4(0, 0, 0, 1))));
+	if (m_UseSkybox || m_UseSphere) {
+		// pbr
+		glUseProgram(m_pbr_shader);
+		glUniformMatrix4fv(glGetUniformLocation(m_pbr_shader, "projection"), 1, GL_FALSE, value_ptr(proj));
+		glUniformMatrix4fv(glGetUniformLocation(m_pbr_shader, "view"), 1, GL_FALSE, value_ptr(view));
+		glUniform3fv(glGetUniformLocation(m_pbr_shader, "camPos"), 1, value_ptr(vec3(inverse(view) * vec4(0, 0, 0, 1))));
 
-	// bind pre-computed IBL data
-	glActiveTexture(GL_TEXTURE0);
-	glBindTexture(GL_TEXTURE_CUBE_MAP, irradianceMap);
-	glActiveTexture(GL_TEXTURE1);
-	glBindTexture(GL_TEXTURE_CUBE_MAP, prefilterMap);
-	glActiveTexture(GL_TEXTURE2);
-	glBindTexture(GL_TEXTURE_2D, brdfLUTTexture);
+		// bind pre-computed IBL data
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_CUBE_MAP, irradianceMap);
+		glActiveTexture(GL_TEXTURE1);
+		glBindTexture(GL_TEXTURE_CUBE_MAP, prefilterMap);
+		glActiveTexture(GL_TEXTURE2);
+		glBindTexture(GL_TEXTURE_2D, brdfLUTTexture);
+	}
+	else {
+		glUseProgram(m_default_shader);
+	}
 
-
-	// gold
-	bindPBRTextures(gold);
-	model = glm::mat4(1.0f);
-	model = glm::translate(model, glm::vec3(0.0, 5.0, 0.0));
-	model = glm::scale(model, glm::vec3(2.5, 2.5, 2.5));
-	glUniformMatrix4fv(glGetUniformLocation(m_pbr_shader, "model"), 1, GL_FALSE, value_ptr(model));
-	glUniformMatrix3fv(glGetUniformLocation(m_pbr_shader, "normalMatrix"), 1, GL_FALSE, value_ptr(glm::transpose(glm::inverse(glm::mat3(model)))));
-	//renderSphere();
-
-	// render skybox
-	glUseProgram(m_background_shader);
-	mat4 viewSkybox = mat4(mat3(view));
-	glUniformMatrix4fv(glGetUniformLocation(m_background_shader, "view"), 1, GL_FALSE, value_ptr(viewSkybox));
-	glActiveTexture(GL_TEXTURE0);
-	glBindTexture(GL_TEXTURE_CUBE_MAP, envCubemap);
-	renderCube();
+	if (m_UseSphere) {
+		// gold
+		bindPBRTextures(gold);
+		model = glm::mat4(1.0f);
+		model = glm::translate(model, glm::vec3(0.0, 5.0, 0.0));
+		model = glm::scale(model, glm::vec3(2.5, 2.5, 2.5));
+		glUniformMatrix4fv(glGetUniformLocation(m_pbr_shader, "model"), 1, GL_FALSE, value_ptr(model));
+		glUniformMatrix3fv(glGetUniformLocation(m_pbr_shader, "normalMatrix"), 1, GL_FALSE, value_ptr(glm::transpose(glm::inverse(glm::mat3(model)))));
+		renderSphere();
+	}
+	if (m_UseSkybox) {
+		// render skybox
+		glUseProgram(m_background_shader);
+		mat4 viewSkybox = mat4(mat3(view));
+		glUniformMatrix4fv(glGetUniformLocation(m_background_shader, "view"), 1, GL_FALSE, value_ptr(viewSkybox));
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_CUBE_MAP, envCubemap);
+		renderCube();
+	}
 
 	// helpful draw options
 	if (m_show_grid) drawGrid(view, proj);
@@ -726,6 +732,11 @@ void Application::renderGUI() {
 	ImGui::Checkbox("Wireframe", &m_showWireframe);
 	ImGui::SameLine();
 	if (ImGui::Button("Screenshot")) rgba_image::screenshot(true);
+
+	ImGui::Separator();
+	ImGui::Checkbox("Use Skybox", &m_UseSkybox);
+	ImGui::SameLine();
+	ImGui::Checkbox("Draw Sphere", &m_UseSphere);
 
 	ImGui::Separator();
 	ImGui::Text("Lava Lamp Controls");
