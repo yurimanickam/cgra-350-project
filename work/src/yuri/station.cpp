@@ -332,13 +332,12 @@ LSystemParams createComplexStationParams() {
     params.lengthScale = 0.65f;
     params.radiusScale = 0.7f;
     params.branchAngle = 90.0f;
-    
-    // More complex branching with 8 directions
-    params.rules.push_back({ 'A', "F[+A][-A][&A][^A][\\A][/A]A", 1.0f });
-    params.rules.push_back({ 'F', "FA", 1.0f }); // every segment spawns a new branch
 
-    return params;
-    
+    // More directions but less all-at-once branching
+    params.rules.push_back({ 'A', "F[+A][-A][&A][^A][\\A][/A]F", 0.6f });
+    params.rules.push_back({ 'A', "F[+A][-A][&A][^A]A", 0.4f });
+    params.rules.push_back({ 'F', "FA", 1.0f });
+
     return params;
 }
 
