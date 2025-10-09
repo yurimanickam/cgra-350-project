@@ -172,14 +172,14 @@ void createCylinderMesh(StationModule& module, float length, float radius, int s
 // L-System string generation
 std::string generateLSystemString(const LSystemParams& params) {
     std::string current = params.axiom;
-    std::mt19937 rng(static_cast<unsigned>(std::time(nullptr)));
-    
+    std::mt19937 rng(params.randomSeed);
+
     for (int iter = 0; iter < params.iterations; ++iter) {
         std::string next = "";
-        
+
         for (char symbol : current) {
             bool replaced = false;
-            
+
             // Find matching rule
             for (const auto& rule : params.rules) {
                 if (rule.symbol == symbol) {
@@ -192,16 +192,16 @@ std::string generateLSystemString(const LSystemParams& params) {
                     }
                 }
             }
-            
+
             // If no rule applied, keep the symbol
             if (!replaced) {
                 next += symbol;
             }
         }
-        
+
         current = next;
     }
-    
+
     return current;
 }
 
@@ -314,14 +314,11 @@ LSystemParams createStandardStationParams() {
     params.lengthScale = 0.7f;
     params.radiusScale = 0.75f;
     params.branchAngle = 90.0f;
-    
-    // Rules for a standard space station with multiple branches
-    // A = main hub with 6 perpendicular branches (up, down, left, right, forward, back)
-    params.rules.push_back({ 'A', "F[+A][-A][&A][^A]A", 1.0f }); // recursive
-    params.rules.push_back({ 'F', "FF", 0.8f }); // optional: makes segments longer
+    params.randomSeed = static_cast<unsigned>(std::time(nullptr));
 
-    return params;
-    
+    params.rules.push_back({ 'A', "F[+A][-A][&A][^A]A", 1.0f });
+    params.rules.push_back({ 'F', "FF", 0.8f });
+
     return params;
 }
 
@@ -332,8 +329,8 @@ LSystemParams createComplexStationParams() {
     params.lengthScale = 0.65f;
     params.radiusScale = 0.7f;
     params.branchAngle = 90.0f;
+    params.randomSeed = static_cast<unsigned>(std::time(nullptr));
 
-    // More directions but less all-at-once branching
     params.rules.push_back({ 'A', "F[+A][-A][&A][^A][\\A][/A]F", 0.6f });
     params.rules.push_back({ 'A', "F[+A][-A][&A][^A]A", 0.4f });
     params.rules.push_back({ 'F', "FA", 1.0f });
@@ -348,41 +345,63 @@ LSystemParams createMinimalStationParams() {
     params.lengthScale = 0.75f;
     params.radiusScale = 0.8f;
     params.branchAngle = 90.0f;
-    
-    // Simple branching
-    params.rules.push_back({'A', "F[+A][-A]", 1.0f});
-    params.rules.push_back({'F', "F", 1.0f});
-    
+    params.randomSeed = static_cast<unsigned>(std::time(nullptr));
+
+    params.rules.push_back({ 'A', "F[+A][-A]", 1.0f });
+    params.rules.push_back({ 'F', "F", 1.0f });
+
+    return params;
+}
+
+// Create custom L-system parameters
+LSystemParams createCustomStationParams(
+    int iterations,
+    float lengthScale,
+    float radiusScale,
+    float branchAngle,
+    unsigned int randomSeed)
+{
+    LSystemParams params;
+    params.axiom = "A";
+    params.iterations = iterations;
+    params.lengthScale = lengthScale;
+    params.radiusScale = radiusScale;
+    params.branchAngle = branchAngle;
+    params.randomSeed = randomSeed;
+
+    // Use standard rules but with custom parameters
+    if (iterations <= 2) {
+        // Minimal
+        params.rules.push_back({ 'A', "F[+A][-A]", 1.0f });
+        params.rules.push_back({ 'F', "F", 1.0f });
+    }
+    else if (iterations == 3) {
+        // Standard
+        params.rules.push_back({ 'A', "F[+A][-A][&A][^A]A", 1.0f });
+        params.rules.push_back({ 'F', "FF", 0.8f });
+    }
+    else {
+        // Complex
+        params.rules.push_back({ 'A', "F[+A][-A][&A][^A][\\A][/A]F", 0.6f });
+        params.rules.push_back({ 'A', "F[+A][-A][&A][^A]A", 0.4f });
+        params.rules.push_back({ 'F', "FA", 1.0f });
+    }
+
     return params;
 }
 
 // Generate a complete procedural space station
 std::vector<StationModule> generateProceduralStation(
-    int complexity,
+    const LSystemParams& params,
     float mainCylinderLength,
-    float mainCylinderRadius) 
+    float mainCylinderRadius)
 {
-    LSystemParams params;
-    
-    switch (complexity) {
-        case 1:
-            params = createMinimalStationParams();
-            break;
-        case 2:
-            params = createStandardStationParams();
-            break;
-        case 3:
-        default:
-            params = createComplexStationParams();
-            break;
-    }
-    
     std::string lSystemString = generateLSystemString(params);
     std::cout << "Generated L-System: " << lSystemString << std::endl;
-    
+
     auto modules = interpretLSystemToStation(lSystemString, params);
     std::cout << "Generated " << modules.size() << " station modules" << std::endl;
-    
+
     return modules;
 }
 

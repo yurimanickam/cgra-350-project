@@ -125,6 +125,17 @@ private:
 	bool m_showLegacyCubes = false;
 	float m_stationSphereRadius = 10.0f;
 
+	int m_stationIterations = 3;
+	float m_stationLengthScale = 0.7f;
+	float m_stationRadiusScale = 0.75f;
+	float m_stationBranchAngle = 90.0f;
+	float m_stationMainLength = 6.0f;
+	float m_stationMainRadius = 1.0f;
+	unsigned int m_stationRandomSeed = 0;
+	bool m_autoRandomSeed = true;
+
+
+
 public:
 	// setup
 	Application(GLFWwindow*);

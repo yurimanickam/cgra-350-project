@@ -715,41 +715,73 @@ void Application::render() {
 	static bool cubesInitialized = false;
 	static bool stationInitialized = false;
 	static float lastSphereRadius = 10.0f;
-	static int lastComplexity = 2;
+
+	// Track last parameters for change detection
+	static int lastIterations = -1;
+	static float lastLengthScale = -1.0f;
+	static float lastRadiusScale = -1.0f;
+	static float lastBranchAngle = -1.0f;
+	static float lastMainLength = -1.0f;
+	static float lastMainRadius = -1.0f;
+	static unsigned int lastRandomSeed = 0;
+
+	// Check if any parameter changed
+	bool paramsChanged = (m_regenerateStation ||
+		!stationInitialized ||
+		lastIterations != m_stationIterations ||
+		std::abs(lastLengthScale - m_stationLengthScale) > 0.001f ||
+		std::abs(lastRadiusScale - m_stationRadiusScale) > 0.001f ||
+		std::abs(lastBranchAngle - m_stationBranchAngle) > 0.001f ||
+		std::abs(lastMainLength - m_stationMainLength) > 0.001f ||
+		std::abs(lastMainRadius - m_stationMainRadius) > 0.001f ||
+		lastRandomSeed != m_stationRandomSeed);
 
 	// Regenerate if requested or parameters changed
-	if (m_regenerateStation || !stationInitialized || lastComplexity != m_stationComplexity) {
+	if (paramsChanged) {
 		// Clean up old station modules
 		for (auto& module : spaceStationModules) {
 			if (module.vao != 0) {
 				glDeleteVertexArrays(1, &module.vao);
 				glDeleteBuffers(1, &module.vbo);
+				if (module.ebo != 0) {
+					glDeleteBuffers(1, &module.ebo);
+				}
 			}
 		}
 		spaceStationModules.clear();
 
+		// Update random seed if auto-randomize is enabled
+		if (m_autoRandomSeed && m_regenerateStation) {
+			m_stationRandomSeed = static_cast<unsigned>(std::time(nullptr));
+		}
+
+		// Generate custom parameters based on current sliders
+		LSystemParams params = createCustomStationParams(
+			m_stationIterations,
+			m_stationLengthScale,
+			m_stationRadiusScale,
+			m_stationBranchAngle,
+			m_stationRandomSeed
+		);
+
 		// Generate new procedural L-system space station
-		spaceStationModules = generateProceduralStation(m_stationComplexity, 10.0f, 1.5f);
+		spaceStationModules = generateProceduralStation(
+			params,
+			m_stationMainLength,
+			m_stationMainRadius
+		);
+
 		stationInitialized = true;
 		m_regenerateStation = false;
-		lastComplexity = m_stationComplexity;
-	}
 
-	// Regenerate legacy cubes if requested
-	if (m_showLegacyCubes && (!cubesInitialized || lastSphereRadius != m_stationSphereRadius)) {
-		// Clean up old cubes
-		for (auto& cube : spaceStationCubes) {
-			if (cube.vao != 0) {
-				glDeleteVertexArrays(1, &cube.vao);
-				glDeleteBuffers(1, &cube.vbo);
-			}
-		}
-		spaceStationCubes.clear();
-
-		// Generate new cubes within sphere
-		spaceStationCubes = scatterBoundCubes(10, m_stationSphereRadius, 2.0f, 1.0f, 1.0f);
-		cubesInitialized = true;
-		lastSphereRadius = m_stationSphereRadius;
+		// Update last known parameters
+		lastIterations = m_stationIterations;
+		lastLengthScale = m_stationLengthScale;
+		lastRadiusScale = m_stationRadiusScale;
+		lastBranchAngle = m_stationBranchAngle;
+		lastMainLength = m_stationMainLength;
+		lastMainRadius = m_stationMainRadius;
+		lastRandomSeed = m_stationRandomSeed;
 	}
 
 	// Use PBR shader and bind required textures
@@ -823,54 +855,100 @@ void Application::renderGUI() {
 		m_lavaLamp.setThreshold(m_threshold);
 	}
 
-	ImGui::Separator();
+	// In Application::renderGUI(), replace the Space Station section:
 
-	// Blob control buttons
-	if (ImGui::Button("Add Blob")) {
-		vec3 pos(0, 2, 0); // lower spawn so they get heated
-		m_lavaLamp.addBlob(pos, 0.9f);
+	ImGui::Separator();
+	ImGui::Text("Space Station L-System Controls");
+
+	// Preset buttons
+	if (ImGui::Button("Minimal Preset")) {
+		LSystemParams preset = createMinimalStationParams();
+		m_stationIterations = preset.iterations;
+		m_stationLengthScale = preset.lengthScale;
+		m_stationRadiusScale = preset.radiusScale;
+		m_stationBranchAngle = preset.branchAngle;
+		m_stationRandomSeed = preset.randomSeed;
 	}
 	ImGui::SameLine();
-	if (ImGui::Button("Remove Blob")) {
-		m_lavaLamp.removeBlob();
+	if (ImGui::Button("Standard Preset")) {
+		LSystemParams preset = createStandardStationParams();
+		m_stationIterations = preset.iterations;
+		m_stationLengthScale = preset.lengthScale;
+		m_stationRadiusScale = preset.radiusScale;
+		m_stationBranchAngle = preset.branchAngle;
+		m_stationRandomSeed = preset.randomSeed;
+	}
+	ImGui::SameLine();
+	if (ImGui::Button("Complex Preset")) {
+		LSystemParams preset = createComplexStationParams();
+		m_stationIterations = preset.iterations;
+		m_stationLengthScale = preset.lengthScale;
+		m_stationRadiusScale = preset.radiusScale;
+		m_stationBranchAngle = preset.branchAngle;
+		m_stationRandomSeed = preset.randomSeed;
 	}
 
-	if (ImGui::Button("Reset Lamp")) {
-		m_lavaLamp.initialize(5);
+	ImGui::Spacing();
+
+	// L-System Generation Parameters
+	if (ImGui::SliderInt("Iterations", &m_stationIterations, 1, 5)) {
+		// Automatic regeneration on change
 	}
 
-	ImGui::Text("Current blob count: %d", m_lavaLamp.getBlobCount());
+	if (ImGui::SliderFloat("Length Scale", &m_stationLengthScale, 0.3f, 1.0f, "%.2f")) {
+		// Automatic regeneration on change
+	}
 
-	ImGui::Separator();
-	ImGui::Text("Space Station Controls");
-	
-	// Complexity slider (1=minimal, 2=standard, 3=complex)
-	if (ImGui::SliderInt("Station Complexity", &m_stationComplexity, 1, 3)) {
-		// Complexity changed, will regenerate on next render
+	if (ImGui::SliderFloat("Width Scale", &m_stationRadiusScale, 0.3f, 1.0f, "%.2f")) {
+		// Automatic regeneration on change
 	}
-	
-	// Display complexity name
-	const char* complexityNames[] = {"Minimal", "Standard", "Complex"};
-	if (m_stationComplexity >= 1 && m_stationComplexity <= 3) {
-		ImGui::Text("Type: %s", complexityNames[m_stationComplexity - 1]);
+
+	if (ImGui::SliderFloat("Branch Angle", &m_stationBranchAngle, 30.0f, 120.0f, "%.1f°")) {
+		// Automatic regeneration on change
 	}
-	
+
+	ImGui::Spacing();
+
+	// Module Dimensions
+	if (ImGui::SliderFloat("Main Length", &m_stationMainLength, 2.0f, 15.0f, "%.1f")) {
+		// Automatic regeneration on change
+	}
+
+	if (ImGui::SliderFloat("Main Width", &m_stationMainRadius, 0.5f, 3.0f, "%.1f")) {
+		// Automatic regeneration on change
+	}
+
+	ImGui::Spacing();
+
+	// Randomization Controls
+	ImGui::Checkbox("Auto-Randomize Seed", &m_autoRandomSeed);
+
+	if (!m_autoRandomSeed) {
+		if (ImGui::SliderInt("Random Seed", reinterpret_cast<int*>(&m_stationRandomSeed), 0, 10000)) {
+			// Automatic regeneration on change
+		}
+	}
+
 	if (ImGui::Button("Regenerate Station")) {
 		m_regenerateStation = true;
 	}
-	
+	ImGui::SameLine();
+	if (ImGui::Button("New Random Seed")) {
+		m_stationRandomSeed = static_cast<unsigned>(std::time(nullptr));
+	}
+
+	ImGui::Spacing();
+
 	ImGui::Checkbox("Show Legacy Cubes", &m_showLegacyCubes);
-	
+
 	if (m_showLegacyCubes) {
 		if (ImGui::SliderFloat("Cube Sphere Radius", &m_stationSphereRadius, 1.0f, 30.0f, "%.1f")) {
 			// Radius changed
 		}
 	}
-	
-	ImGui::Text("L-System Space Station:");
-	ImGui::Text("- Minimal: Simple branching");
-	ImGui::Text("- Standard: Cross-shaped modules");
-	ImGui::Text("- Complex: Dense structure");
+
+	ImGui::Spacing();
+	ImGui::TextWrapped("Tip: Adjust sliders in real-time to see changes. Auto-regeneration enabled!");
 
 // finish creating window
 	ImGui::End();

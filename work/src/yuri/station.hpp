@@ -7,13 +7,13 @@
 
 // Holds mesh and transform for each cylinder module
 struct StationModule {
-    unsigned int vao = 0, vbo = 0, ebo = 0; // Add ebo
+    unsigned int vao = 0, vbo = 0, ebo = 0;
     glm::mat4 model = glm::mat4(1.0f);
     glm::vec3 color = glm::vec3(0.2, 0.7, 1.0);
     float length = 1.0f;
     float radius = 5.0f;
     int generation = 0;
-    unsigned int indexCount = 0; // Add index count
+    unsigned int indexCount = 0;
 
     enum ModuleType {
         MAIN_CORRIDOR,
@@ -39,6 +39,7 @@ struct LSystemParams {
     float lengthScale = 0.7f; // How much to scale length each generation
     float radiusScale = 0.8f; // How much to scale radius each generation
     float branchAngle = 90.0f; // Angle for perpendicular branches
+    unsigned int randomSeed = 0; // Seed for randomization
 };
 
 // Turtle state for L-system interpretation
@@ -71,12 +72,12 @@ std::string generateLSystemString(const LSystemParams& params);
 
 // Interpret L-System string and generate space station modules
 std::vector<StationModule> interpretLSystemToStation(
-    const std::string& lSystemString, 
+    const std::string& lSystemString,
     const LSystemParams& params);
 
 // Create a complete procedural space station using L-systems
 std::vector<StationModule> generateProceduralStation(
-    int complexity = 3,
+    const LSystemParams& params,
     float mainCylinderLength = 10.0f,
     float mainCylinderRadius = 1.5f);
 
@@ -85,11 +86,19 @@ LSystemParams createStandardStationParams();
 LSystemParams createComplexStationParams();
 LSystemParams createMinimalStationParams();
 
+// Create custom L-system parameters
+LSystemParams createCustomStationParams(
+    int iterations,
+    float lengthScale,
+    float radiusScale,
+    float branchAngle,
+    unsigned int randomSeed);
+
 // Render station modules using PBR shader
 void renderStationModulesPBR(
-    const std::vector<StationModule>& modules, 
-    const glm::mat4& view, 
-    const glm::mat4& proj, 
+    const std::vector<StationModule>& modules,
+    const glm::mat4& view,
+    const glm::mat4& proj,
     unsigned int pbrShader);
 
 // Legacy functions
