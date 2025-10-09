@@ -706,7 +706,18 @@ void Application::render() {
 	// Render lava lamp
 	renderLavaLamp(view, proj);
 
-	renderTempCube(view, proj);
+
+	static std::vector<BoundCube> spaceStationCubes;
+	static bool cubesInitialized = false;
+
+	if (!cubesInitialized) {
+		// Example: scatter 10 modules of 'Lab' size in a 10x10x10 box
+		spaceStationCubes = scatterBoundCubes(10, glm::vec3(-5, 0, -5), glm::vec3(5, 10, 5), 2.0f, 1.0f, 1.0f);
+		cubesInitialized = true;
+	}
+
+	// In your render code (replace renderTempCube):
+	renderBoundCubes(spaceStationCubes, view, proj);
 
 
 	// draw the original model (if desired)
