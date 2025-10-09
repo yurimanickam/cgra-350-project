@@ -707,6 +707,9 @@ void Application::render() {
 	renderLavaLamp(view, proj);
 
 
+	// ----------------------------
+	// Space station cubes (now PBR gold material)
+	// ----------------------------
 	static std::vector<BoundCube> spaceStationCubes;
 	static bool cubesInitialized = false;
 
@@ -716,9 +719,25 @@ void Application::render() {
 		cubesInitialized = true;
 	}
 
-	// In your render code (replace renderTempCube):
-	renderBoundCubes(spaceStationCubes, view, proj);
+	// Use PBR shader and bind required textures regardless of other toggles
+	glUseProgram(m_pbr_shader);
+	glUniformMatrix4fv(glGetUniformLocation(m_pbr_shader, "projection"), 1, GL_FALSE, value_ptr(proj));
+	glUniformMatrix4fv(glGetUniformLocation(m_pbr_shader, "view"), 1, GL_FALSE, value_ptr(view));
+	glUniform3fv(glGetUniformLocation(m_pbr_shader, "camPos"), 1, value_ptr(vec3(inverse(view) * vec4(0, 0, 0, 1))));
 
+	// Bind IBL data
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_CUBE_MAP, irradianceMap);
+	glActiveTexture(GL_TEXTURE1);
+	glBindTexture(GL_TEXTURE_CUBE_MAP, prefilterMap);
+	glActiveTexture(GL_TEXTURE2);
+	glBindTexture(GL_TEXTURE_2D, brdfLUTTexture);
+
+	// Bind gold PBR textures (albedo/normal/metallic/roughness/ao)
+	bindPBRTextures(gold);
+
+	// Render cubes with PBR
+	renderBoundCubesPBR(spaceStationCubes, view, proj, m_pbr_shader);
 
 	// draw the original model (if desired)
 	//m_model.draw(view, proj);

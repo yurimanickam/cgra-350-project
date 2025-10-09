@@ -5,58 +5,59 @@
 #include <random>
 #include <ctime>
 
-// Shader for colored cubes (same as before)
-namespace {
-    GLuint cubeShader = 0;
-
-    const char* cubeVert = R"(
-        #version 330 core
-        layout (location = 0) in vec3 aPos;
-        uniform mat4 view, proj, model;
-        void main() {
-            gl_Position = proj * view * model * vec4(aPos, 1.0);
-        }
-    )";
-    const char* cubeFrag = R"(
-        #version 330 core
-        uniform vec3 uColor;
-        out vec4 FragColor;
-        void main() {
-            FragColor = vec4(uColor, 1.0);
-        }
-    )";
-
-    GLuint compileShader(GLenum type, const char* src) {
-        GLuint s = glCreateShader(type);
-        glShaderSource(s, 1, &src, nullptr);
-        glCompileShader(s);
-        return s;
-    }
-
-    void initCubeShader() {
-        if (cubeShader) return;
-        GLuint vs = compileShader(GL_VERTEX_SHADER, cubeVert);
-        GLuint fs = compileShader(GL_FRAGMENT_SHADER, cubeFrag);
-        cubeShader = glCreateProgram();
-        glAttachShader(cubeShader, vs);
-        glAttachShader(cubeShader, fs);
-        glLinkProgram(cubeShader);
-        glDeleteShader(vs);
-        glDeleteShader(fs);
-    }
-}
-
 void createCuboidMesh(BoundCube& cube, float length, float width, float height) {
     // Centered at origin. Vertex order: each face, 2 triangles per face.
+    // Attribute layout: position (3), normal (3), uv (2)
     float x = length / 2.0f, y = height / 2.0f, z = width / 2.0f;
+
     float vertices[] = {
-        // positions
-        -x, -y, -z,   x, -y, -z,   x,  y, -z,   x,  y, -z,  -x,  y, -z,  -x, -y, -z, // back
-        -x, -y,  z,   x, -y,  z,   x,  y,  z,   x,  y,  z,  -x,  y,  z,  -x, -y,  z, // front
-        -x,  y,  z,  -x,  y, -z,  -x, -y, -z,  -x, -y, -z,  -x, -y,  z,  -x,  y,  z, // left
-         x,  y,  z,   x,  y, -z,   x, -y, -z,   x, -y, -z,   x, -y,  z,   x,  y,  z, // right
-        -x, -y, -z,   x, -y, -z,   x, -y,  z,   x, -y,  z,  -x, -y,  z,  -x, -y, -z, // bottom
-        -x,  y, -z,   x,  y, -z,   x,  y,  z,   x,  y,  z,  -x,  y,  z,  -x,  y, -z  // top
+        // back face (0,0,-1)
+        -x, -y, -z,  0.0f,  0.0f, -1.0f,  0.0f, 0.0f,
+         x,  y, -z,  0.0f,  0.0f, -1.0f,  1.0f, 1.0f,
+         x, -y, -z,  0.0f,  0.0f, -1.0f,  1.0f, 0.0f,
+         x,  y, -z,  0.0f,  0.0f, -1.0f,  1.0f, 1.0f,
+        -x, -y, -z,  0.0f,  0.0f, -1.0f,  0.0f, 0.0f,
+        -x,  y, -z,  0.0f,  0.0f, -1.0f,  0.0f, 1.0f,
+
+        // front face (0,0,1)
+        -x, -y,  z,  0.0f,  0.0f,  1.0f,  0.0f, 0.0f,
+         x, -y,  z,  0.0f,  0.0f,  1.0f,  1.0f, 0.0f,
+         x,  y,  z,  0.0f,  0.0f,  1.0f,  1.0f, 1.0f,
+         x,  y,  z,  0.0f,  0.0f,  1.0f,  1.0f, 1.0f,
+        -x,  y,  z,  0.0f,  0.0f,  1.0f,  0.0f, 1.0f,
+        -x, -y,  z,  0.0f,  0.0f,  1.0f,  0.0f, 0.0f,
+
+        // left face (-1,0,0)
+        -x,  y,  z, -1.0f,  0.0f,  0.0f,  1.0f, 0.0f,
+        -x,  y, -z, -1.0f,  0.0f,  0.0f,  1.0f, 1.0f,
+        -x, -y, -z, -1.0f,  0.0f,  0.0f,  0.0f, 1.0f,
+        -x, -y, -z, -1.0f,  0.0f,  0.0f,  0.0f, 1.0f,
+        -x, -y,  z, -1.0f,  0.0f,  0.0f,  0.0f, 0.0f,
+        -x,  y,  z, -1.0f,  0.0f,  0.0f,  1.0f, 0.0f,
+
+        // right face (1,0,0)
+         x,  y,  z,  1.0f,  0.0f,  0.0f,  1.0f, 0.0f,
+         x, -y, -z,  1.0f,  0.0f,  0.0f,  0.0f, 1.0f,
+         x,  y, -z,  1.0f,  0.0f,  0.0f,  1.0f, 1.0f,
+         x, -y, -z,  1.0f,  0.0f,  0.0f,  0.0f, 1.0f,
+         x,  y,  z,  1.0f,  0.0f,  0.0f,  1.0f, 0.0f,
+         x, -y,  z,  1.0f,  0.0f,  0.0f,  0.0f, 0.0f,
+
+         // bottom face (0,-1,0)
+         -x, -y, -z,  0.0f, -1.0f,  0.0f,  0.0f, 1.0f,
+          x, -y, -z,  0.0f, -1.0f,  0.0f,  1.0f, 1.0f,
+          x, -y,  z,  0.0f, -1.0f,  0.0f,  1.0f, 0.0f,
+          x, -y,  z,  0.0f, -1.0f,  0.0f,  1.0f, 0.0f,
+         -x, -y,  z,  0.0f, -1.0f,  0.0f,  0.0f, 0.0f,
+         -x, -y, -z,  0.0f, -1.0f,  0.0f,  0.0f, 1.0f,
+
+         // top face (0,1,0)
+         -x,  y, -z,  0.0f,  1.0f,  0.0f,  0.0f, 1.0f,
+          x,  y,  z,  0.0f,  1.0f,  0.0f,  1.0f, 0.0f,
+          x,  y, -z,  0.0f,  1.0f,  0.0f,  1.0f, 1.0f,
+          x,  y,  z,  0.0f,  1.0f,  0.0f,  1.0f, 0.0f,
+         -x,  y, -z,  0.0f,  1.0f,  0.0f,  0.0f, 1.0f,
+         -x,  y,  z,  0.0f,  1.0f,  0.0f,  0.0f, 0.0f
     };
 
     if (cube.vao != 0) {
@@ -70,8 +71,15 @@ void createCuboidMesh(BoundCube& cube, float length, float width, float height) 
     glBindBuffer(GL_ARRAY_BUFFER, cube.vbo);
     glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
 
-    glEnableVertexAttribArray(0); // position
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+    // pos (location = 0)
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
+    // normal (location = 1)
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
+    // uv (location = 2)
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
 
     glBindVertexArray(0);
 }
@@ -101,22 +109,33 @@ std::vector<BoundCube> scatterBoundCubes(
         cube.model = glm::translate(glm::mat4(1.0f), pos)
             * glm::rotate(glm::mat4(1.0f), angle, axis);
 
-        // Optional: random color
-        cube.color = glm::vec3(0.2 + 0.6f * float(i) / count, 0.7, 1.0 - 0.5f * float(i) / count);
+        // Optional: random color (unused by PBR)
+        cube.color = glm::vec3(0.2f + 0.6f * float(i) / count, 0.7f, 1.0f - 0.5f * float(i) / count);
 
         cubes.push_back(cube);
     }
     return cubes;
 }
 
-void renderBoundCubes(const std::vector<BoundCube>& cubes, const glm::mat4& view, const glm::mat4& proj) {
-    initCubeShader();
-    glUseProgram(cubeShader);
+void renderBoundCubesPBR(const std::vector<BoundCube>& cubes, const glm::mat4& view, const glm::mat4& proj, unsigned int pbrShader) {
+    glUseProgram(pbrShader);
+
+    // Set once (caller may already set these, but it's safe to set again)
+    GLint locProj = glGetUniformLocation(pbrShader, "projection");
+    GLint locView = glGetUniformLocation(pbrShader, "view");
+    if (locProj != -1) glUniformMatrix4fv(locProj, 1, GL_FALSE, glm::value_ptr(proj));
+    if (locView != -1) glUniformMatrix4fv(locView, 1, GL_FALSE, glm::value_ptr(view));
+
+    // Draw each cube with its own model/normalMatrix
     for (const BoundCube& cube : cubes) {
-        glUniformMatrix4fv(glGetUniformLocation(cubeShader, "view"), 1, GL_FALSE, glm::value_ptr(view));
-        glUniformMatrix4fv(glGetUniformLocation(cubeShader, "proj"), 1, GL_FALSE, glm::value_ptr(proj));
-        glUniformMatrix4fv(glGetUniformLocation(cubeShader, "model"), 1, GL_FALSE, glm::value_ptr(cube.model));
-        glUniform3fv(glGetUniformLocation(cubeShader, "uColor"), 1, glm::value_ptr(cube.color));
+        glm::mat4 model = cube.model;
+        glm::mat3 normalMatrix = glm::transpose(glm::inverse(glm::mat3(model)));
+
+        GLint locModel = glGetUniformLocation(pbrShader, "model");
+        GLint locNormal = glGetUniformLocation(pbrShader, "normalMatrix");
+        if (locModel != -1) glUniformMatrix4fv(locModel, 1, GL_FALSE, glm::value_ptr(model));
+        if (locNormal != -1) glUniformMatrix3fv(locNormal, 1, GL_FALSE, glm::value_ptr(normalMatrix));
+
         glBindVertexArray(cube.vao);
         glDrawArrays(GL_TRIANGLES, 0, 36);
     }
