@@ -808,6 +808,45 @@ void Application::render() {
 	// Render L-system procedural space station
 	renderStationModulesPBR(spaceStationModules, view, proj, m_pbr_shader);
 
+	// Generate greebles for each module (do this after station generation)
+	static std::vector<Greeble> allGreebles;
+	// Regenerate greebles when station changes OR when greeble parameters change
+	static float lastScaleFactor = 1.0f;
+	static float lastScaleProportion = 0.0f;
+	static float lastScaleMix = 0.0f;
+	static int lastGreebleCount = -1;
+
+	bool greebleParamsChanged = (lastScaleFactor != m_greebleScaleFactor ||
+		lastScaleProportion != m_greebleScaleProportion ||
+		lastScaleMix != m_greebleScaleMix ||
+		lastGreebleCount != m_greebleCountPerModule);
+
+	if (paramsChanged || !m_greeblesGenerated || greebleParamsChanged) {
+		allGreebles.clear();
+
+		for (size_t i = 0; i < spaceStationModules.size(); ++i) {
+			auto moduleGreebles = generateGreeblesForModule(
+				spaceStationModules[i],
+				m_greebleCountPerModule,
+				m_stationRandomSeed + static_cast<unsigned>(i),
+				m_greebleScaleFactor,
+				m_greebleScaleProportion,
+				m_greebleScaleMix  // Pass the new parameter
+			);
+			allGreebles.insert(allGreebles.end(), moduleGreebles.begin(), moduleGreebles.end());
+		}
+
+		m_greeblesGenerated = true;
+		lastScaleFactor = m_greebleScaleFactor;
+		lastScaleProportion = m_greebleScaleProportion;
+		lastScaleMix = m_greebleScaleMix;
+		lastGreebleCount = m_greebleCountPerModule;
+		std::cout << "Generated " << allGreebles.size() << " total greebles" << std::endl;
+	}
+
+	renderGreeblesPBR(allGreebles, view, proj, m_pbr_shader);
+
+
 	// Optionally render legacy cubes
 	if (m_showLegacyCubes) {
 		renderBoundCubesPBR(spaceStationCubes, view, proj, m_pbr_shader);
@@ -954,6 +993,42 @@ void Application::renderGUI() {
 	ImGui::SameLine();
 	if (ImGui::Button("New Random Seed")) {
 		m_stationRandomSeed = static_cast<unsigned>(std::time(nullptr));
+	}
+	ImGui::Spacing();
+	if (ImGui::SliderInt("Greebles Per Module", &m_greebleCountPerModule, 0, 50)) {
+		m_greeblesGenerated = false; // Force regeneration
+	}
+
+	if (ImGui::SliderFloat("Greeble Scale Factor", &m_greebleScaleFactor, 0.5f, 10.0f, "%.2f")) {
+		m_greeblesGenerated = false;
+	}
+	ImGui::SameLine();
+	if (ImGui::Button("?##scalefactor")) {}
+	if (ImGui::IsItemHovered()) {
+		ImGui::SetTooltip("How much to scale affected greebles.\n"
+			"1.0 = normal size, 5.0 = 5x larger");
+	}
+
+	if (ImGui::SliderFloat("Scale Proportion", &m_greebleScaleProportion, 0.0f, 1.0f, "%.2f")) {
+		m_greeblesGenerated = false;
+	}
+	ImGui::SameLine();
+	if (ImGui::Button("?##scaleprop")) {}
+	if (ImGui::IsItemHovered()) {
+		ImGui::SetTooltip("Proportion of greebles randomly affected by scaling.\n"
+			"0.0 = none, 0.3 = 30%, 1.0 = all");
+	}
+
+	if (ImGui::SliderFloat("Scale Direction Mix", &m_greebleScaleMix, 0.0f, 1.0f, "%.2f")) {
+		m_greeblesGenerated = false;
+	}
+	ImGui::SameLine();
+	if (ImGui::Button("?##scalemix")) {}
+	if (ImGui::IsItemHovered()) {
+		ImGui::SetTooltip("Blend between scaling modes:\n"
+			"0.0 = Uniform (all directions)\n"
+			"0.5 = Mixed\n"
+			"1.0 = Normal only (solar panel mode)");
 	}
 
 	ImGui::Spacing();

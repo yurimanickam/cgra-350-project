@@ -135,6 +135,18 @@ private:
 	unsigned int m_stationRandomSeed = 0;
 	bool m_autoRandomSeed = false;  // ADD THIS LINE
 
+	// In Application class definition
+	int m_greebleCountPerModule = 15;
+	bool m_greeblesGenerated = false;
+
+
+
+	// Greeble scaling controls
+	float m_greebleScaleFactor = 1.0f;
+	float m_greebleScaleProportion = 0.0f;
+	float m_greebleScaleMix = 0.0f; // 0.0 = uniform scaling, 1.0 = normal-only scaling
+	
+
 
 
 public:

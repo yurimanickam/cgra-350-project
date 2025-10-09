@@ -24,6 +24,21 @@ struct StationModule {
     } type = MAIN_CORRIDOR;
 };
 
+// Greeble structure for surface details
+// Greeble structure for surface details
+struct Greeble {
+    unsigned int vao = 0, vbo = 0, ebo = 0;
+    glm::mat4 model = glm::mat4(1.0f);
+    glm::vec3 color = glm::vec3(0.8, 0.3, 0.1); // Orange/red accent color
+    unsigned int indexCount = 0;
+    float scale = 1.0f; // Add this line
+
+    enum GreebleType {
+        SMALL_CUBE,
+        FLAT_CYLINDER
+    } type = SMALL_CUBE;
+};
+
 // L-System Rule structure
 struct LSystemRule {
     char symbol;
@@ -64,6 +79,23 @@ struct BoundCube {
 // Create a cylinder mesh for a space station module
 // Layout: location 0 = position (vec3), location 1 = normal (vec3), location 2 = uv (vec2)
 void createCylinderMesh(StationModule& module, float length, float radius, int segments = 32);
+
+// Create greeble meshes
+void createGreebleCubeMesh(Greeble& greeble, float size);
+void createGreebleFlatCylinderMesh(Greeble& greeble, float radius, float height, int segments = 16);
+
+void createGreebleSolarPanelMesh(Greeble& greeble, float width, float height);
+
+
+
+// Generate greebles for a station module
+std::vector<Greeble> generateGreeblesForModule(
+    const StationModule& module,
+    int greebleCount,
+    unsigned int randomSeed,
+    float scaleFactor = 1.0f,
+    float scaleProportion = 0.0f,
+    float scaleMix = 0.0f);
 
 // Generate a cuboid mesh (legacy support)
 void createCuboidMesh(BoundCube& cube, float length, float width, float height);
@@ -107,6 +139,13 @@ LSystemParams createCustomStationParams(
 // Render station modules using PBR shader
 void renderStationModulesPBR(
     const std::vector<StationModule>& modules,
+    const glm::mat4& view,
+    const glm::mat4& proj,
+    unsigned int pbrShader);
+
+// Render greebles using PBR shader
+void renderGreeblesPBR(
+    const std::vector<Greeble>& greebles,
     const glm::mat4& view,
     const glm::mat4& proj,
     unsigned int pbrShader);
