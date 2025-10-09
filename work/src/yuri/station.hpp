@@ -39,6 +39,7 @@ struct LSystemParams {
     float lengthScale = 0.7f; // How much to scale length each generation
     float radiusScale = 0.8f; // How much to scale radius each generation
     float branchAngle = 90.0f; // Angle for perpendicular branches
+    float branchProbability = 1.0f; // Probability that a branch will produce children (0.0-1.0)
     unsigned int randomSeed = 0; // Seed for randomization
 };
 
@@ -86,12 +87,21 @@ LSystemParams createStandardStationParams();
 LSystemParams createComplexStationParams();
 LSystemParams createMinimalStationParams();
 
-// Create custom L-system parameters
+// Create custom L-system parameters - 5-argument version
 LSystemParams createCustomStationParams(
     int iterations,
     float lengthScale,
     float radiusScale,
     float branchAngle,
+    unsigned int randomSeed);
+
+// Create custom L-system parameters - 6-argument version (for branch probability)
+LSystemParams createCustomStationParams(
+    int iterations,
+    float lengthScale,
+    float radiusScale,
+    float branchAngle,
+    float branchProbability,
     unsigned int randomSeed);
 
 // Render station modules using PBR shader

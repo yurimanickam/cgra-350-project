@@ -721,6 +721,7 @@ void Application::render() {
 	static float lastLengthScale = -1.0f;
 	static float lastRadiusScale = -1.0f;
 	static float lastBranchAngle = -1.0f;
+	static float lastBranchProbability = -1.0f;
 	static float lastMainLength = -1.0f;
 	static float lastMainRadius = -1.0f;
 	static unsigned int lastRandomSeed = 0;
@@ -732,6 +733,7 @@ void Application::render() {
 		std::abs(lastLengthScale - m_stationLengthScale) > 0.001f ||
 		std::abs(lastRadiusScale - m_stationRadiusScale) > 0.001f ||
 		std::abs(lastBranchAngle - m_stationBranchAngle) > 0.001f ||
+		std::abs(lastBranchProbability - m_stationBranchProbability) > 0.001f ||
 		std::abs(lastMainLength - m_stationMainLength) > 0.001f ||
 		std::abs(lastMainRadius - m_stationMainRadius) > 0.001f ||
 		lastRandomSeed != m_stationRandomSeed);
@@ -761,6 +763,7 @@ void Application::render() {
 			m_stationLengthScale,
 			m_stationRadiusScale,
 			m_stationBranchAngle,
+			m_stationBranchProbability,
 			m_stationRandomSeed
 		);
 
@@ -779,6 +782,7 @@ void Application::render() {
 		lastLengthScale = m_stationLengthScale;
 		lastRadiusScale = m_stationRadiusScale;
 		lastBranchAngle = m_stationBranchAngle;
+		lastBranchProbability = m_stationBranchProbability;
 		lastMainLength = m_stationMainLength;
 		lastMainRadius = m_stationMainRadius;
 		lastRandomSeed = m_stationRandomSeed;
@@ -860,13 +864,13 @@ void Application::renderGUI() {
 	ImGui::Separator();
 	ImGui::Text("Space Station L-System Controls");
 
-	// Preset buttons
 	if (ImGui::Button("Minimal Preset")) {
 		LSystemParams preset = createMinimalStationParams();
 		m_stationIterations = preset.iterations;
 		m_stationLengthScale = preset.lengthScale;
 		m_stationRadiusScale = preset.radiusScale;
 		m_stationBranchAngle = preset.branchAngle;
+		m_stationBranchProbability = preset.branchProbability; // NEW
 		m_stationRandomSeed = preset.randomSeed;
 	}
 	ImGui::SameLine();
@@ -876,6 +880,7 @@ void Application::renderGUI() {
 		m_stationLengthScale = preset.lengthScale;
 		m_stationRadiusScale = preset.radiusScale;
 		m_stationBranchAngle = preset.branchAngle;
+		m_stationBranchProbability = preset.branchProbability; // NEW
 		m_stationRandomSeed = preset.randomSeed;
 	}
 	ImGui::SameLine();
@@ -885,6 +890,7 @@ void Application::renderGUI() {
 		m_stationLengthScale = preset.lengthScale;
 		m_stationRadiusScale = preset.radiusScale;
 		m_stationBranchAngle = preset.branchAngle;
+		m_stationBranchProbability = preset.branchProbability; // NEW
 		m_stationRandomSeed = preset.randomSeed;
 	}
 
@@ -905,6 +911,19 @@ void Application::renderGUI() {
 
 	if (ImGui::SliderFloat("Branch Angle", &m_stationBranchAngle, 30.0f, 120.0f, "%.1f°")) {
 		// Automatic regeneration on change
+	}
+
+	// NEW: Add this slider
+	if (ImGui::SliderFloat("Branch Probability", &m_stationBranchProbability, 0.0f, 1.0f, "%.2f")) {
+		// Automatic regeneration on change
+	}
+	ImGui::SameLine();
+	if (ImGui::Button("?##branchprob")) {}
+	if (ImGui::IsItemHovered()) {
+		ImGui::SetTooltip("Controls how likely secondary branches are to produce children.\n"
+			"1.0 = symmetric (all branches branch)\n"
+			"0.5 = moderate asymmetry\n"
+			"0.0 = no secondary branching");
 	}
 
 	ImGui::Spacing();

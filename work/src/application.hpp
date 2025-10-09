@@ -129,10 +129,11 @@ private:
 	float m_stationLengthScale = 0.7f;
 	float m_stationRadiusScale = 0.75f;
 	float m_stationBranchAngle = 90.0f;
-	float m_stationMainLength = 6.0f;
-	float m_stationMainRadius = 1.0f;
+	float m_stationBranchProbability = 0.8f; // NEW: Add this
+	float m_stationMainLength = 8.0f;
+	float m_stationMainRadius = 1.5f;
 	unsigned int m_stationRandomSeed = 0;
-	bool m_autoRandomSeed = true;
+	bool m_autoRandomSeed = false;  // ADD THIS LINE
 
 
 

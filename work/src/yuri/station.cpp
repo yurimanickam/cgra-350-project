@@ -170,22 +170,40 @@ void createCylinderMesh(StationModule& module, float length, float radius, int s
 }
 
 // L-System string generation
+// L-System string generation with branch probability
 std::string generateLSystemString(const LSystemParams& params) {
     std::string current = params.axiom;
     std::mt19937 rng(params.randomSeed);
+    std::uniform_real_distribution<float> dist(0.0f, 1.0f);
 
     for (int iter = 0; iter < params.iterations; ++iter) {
         std::string next = "";
 
-        for (char symbol : current) {
+        // Track depth for asymmetric branching
+        int bracketDepth = 0;
+
+        for (size_t i = 0; i < current.size(); ++i) {
+            char symbol = current[i];
+
+            // Track bracket depth to know which generation we're in
+            if (symbol == '[') bracketDepth++;
+            else if (symbol == ']') bracketDepth--;
+
             bool replaced = false;
 
             // Find matching rule
             for (const auto& rule : params.rules) {
                 if (rule.symbol == symbol) {
-                    // Check probability for stochastic L-systems
-                    std::uniform_real_distribution<float> dist(0.0f, 1.0f);
-                    if (dist(rng) <= rule.probability) {
+                    // For symbols in branches (depth > 0), apply branch probability
+                    float effectiveProbability = rule.probability;
+
+                    // Reduce probability for deeper branches
+                    if (bracketDepth > 0 && symbol == 'A') {
+                        // Each level of depth reduces the chance of branching
+                        effectiveProbability *= std::pow(params.branchProbability, bracketDepth);
+                    }
+
+                    if (dist(rng) <= effectiveProbability) {
                         next += rule.replacement;
                         replaced = true;
                         break;
@@ -305,8 +323,6 @@ std::vector<StationModule> interpretLSystemToStation(
     
     return modules;
 }
-
-// Create preset L-system parameters
 LSystemParams createStandardStationParams() {
     LSystemParams params;
     params.axiom = "A";
@@ -314,6 +330,7 @@ LSystemParams createStandardStationParams() {
     params.lengthScale = 0.7f;
     params.radiusScale = 0.75f;
     params.branchAngle = 90.0f;
+    params.branchProbability = 0.8f; // 80% chance for secondary branches
     params.randomSeed = static_cast<unsigned>(std::time(nullptr));
 
     params.rules.push_back({ 'A', "F[+A][-A][&A][^A]A", 1.0f });
@@ -329,6 +346,7 @@ LSystemParams createComplexStationParams() {
     params.lengthScale = 0.65f;
     params.radiusScale = 0.7f;
     params.branchAngle = 90.0f;
+    params.branchProbability = 0.6f; // Lower probability for more asymmetry
     params.randomSeed = static_cast<unsigned>(std::time(nullptr));
 
     params.rules.push_back({ 'A', "F[+A][-A][&A][^A][\\A][/A]F", 0.6f });
@@ -345,6 +363,7 @@ LSystemParams createMinimalStationParams() {
     params.lengthScale = 0.75f;
     params.radiusScale = 0.8f;
     params.branchAngle = 90.0f;
+    params.branchProbability = 1.0f; // Full probability for minimal
     params.randomSeed = static_cast<unsigned>(std::time(nullptr));
 
     params.rules.push_back({ 'A', "F[+A][-A]", 1.0f });
@@ -353,7 +372,6 @@ LSystemParams createMinimalStationParams() {
     return params;
 }
 
-// Create custom L-system parameters
 LSystemParams createCustomStationParams(
     int iterations,
     float lengthScale,
@@ -367,21 +385,19 @@ LSystemParams createCustomStationParams(
     params.lengthScale = lengthScale;
     params.radiusScale = radiusScale;
     params.branchAngle = branchAngle;
+    params.branchProbability = 0.7f; // Default value
     params.randomSeed = randomSeed;
 
     // Use standard rules but with custom parameters
     if (iterations <= 2) {
-        // Minimal
         params.rules.push_back({ 'A', "F[+A][-A]", 1.0f });
         params.rules.push_back({ 'F', "F", 1.0f });
     }
     else if (iterations == 3) {
-        // Standard
         params.rules.push_back({ 'A', "F[+A][-A][&A][^A]A", 1.0f });
         params.rules.push_back({ 'F', "FF", 0.8f });
     }
     else {
-        // Complex
         params.rules.push_back({ 'A', "F[+A][-A][&A][^A][\\A][/A]F", 0.6f });
         params.rules.push_back({ 'A', "F[+A][-A][&A][^A]A", 0.4f });
         params.rules.push_back({ 'F', "FA", 1.0f });
@@ -389,6 +405,42 @@ LSystemParams createCustomStationParams(
 
     return params;
 }
+
+LSystemParams createCustomStationParams(
+    int iterations,
+    float lengthScale,
+    float radiusScale,
+    float branchAngle,
+    float branchProbability,
+    unsigned int randomSeed)
+{
+    LSystemParams params;
+    params.axiom = "A";
+    params.iterations = iterations;
+    params.lengthScale = lengthScale;
+    params.radiusScale = radiusScale;
+    params.branchAngle = branchAngle;
+    params.branchProbability = branchProbability;
+    params.randomSeed = randomSeed;
+
+    // Use standard rules but with custom parameters
+    if (iterations <= 2) {
+        params.rules.push_back({ 'A', "F[+A][-A]", 1.0f });
+        params.rules.push_back({ 'F', "F", 1.0f });
+    }
+    else if (iterations == 3) {
+        params.rules.push_back({ 'A', "F[+A][-A][&A][^A]A", 1.0f });
+        params.rules.push_back({ 'F', "FF", 0.8f });
+    }
+    else {
+        params.rules.push_back({ 'A', "F[+A][-A][&A][^A][\\A][/A]F", 0.6f });
+        params.rules.push_back({ 'A', "F[+A][-A][&A][^A]A", 0.4f });
+        params.rules.push_back({ 'F', "FA", 1.0f });
+    }
+
+    return params;
+}
+
 
 // Generate a complete procedural space station
 std::vector<StationModule> generateProceduralStation(
