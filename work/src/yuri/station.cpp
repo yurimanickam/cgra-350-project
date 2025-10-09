@@ -2,98 +2,63 @@
 #include <GL/glew.h>
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/matrix_transform.hpp>
-#include <array>
-#include <vector>
 #include <random>
 #include <ctime>
 
-// Helper struct for vertex attributes
-struct Vertex {
-    glm::vec3 pos;
-    glm::vec3 normal;
-    glm::vec2 uv;
-};
-
-// Generates the vertex data for a cuboid procedurally
-static void generateCuboidVertices(float length, float width, float height, std::vector<float>& outVertices) {
-    // Each face: 4 vertices (quad), 2 triangles per face (6 indices)
-    const glm::vec3 positions[8] = {
-        {-0.5f, -0.5f, -0.5f}, // 0
-        { 0.5f, -0.5f, -0.5f}, // 1
-        { 0.5f,  0.5f, -0.5f}, // 2
-        {-0.5f,  0.5f, -0.5f}, // 3
-        {-0.5f, -0.5f,  0.5f}, // 4
-        { 0.5f, -0.5f,  0.5f}, // 5
-        { 0.5f,  0.5f,  0.5f}, // 6
-        {-0.5f,  0.5f,  0.5f}, // 7
-    };
-    // Scale positions
-    glm::vec3 scale = { length, height, width };
-    std::array<glm::vec3, 8> scaled;
-    for (int i = 0; i < 8; ++i) {
-        scaled[i] = positions[i] * scale;
-    }
-
-    // Face definitions (indices into positions)
-    struct Face {
-        int idx[4];
-        glm::vec3 normal;
-    };
-    constexpr Face faces[6] = {
-        // Order: ccw for outward normal, +z=front
-        {{0, 1, 2, 3}, { 0,  0, -1}}, // back
-        {{4, 5, 6, 7}, { 0,  0,  1}}, // front
-        {{0, 4, 7, 3}, {-1,  0,  0}}, // left
-        {{1, 5, 6, 2}, { 1,  0,  0}}, // right
-        {{0, 1, 5, 4}, { 0, -1,  0}}, // bottom
-        {{3, 2, 6, 7}, { 0,  1,  0}}, // top
-    };
-
-    // UVs quad mapping
-    const glm::vec2 uvs[4] = {
-        {0.0f, 0.0f}, {1.0f, 0.0f}, {1.0f, 1.0f}, {0.0f, 1.0f}
-    };
-
-    outVertices.clear();
-    outVertices.reserve(6 * 6 * 8); // 6 faces, 2 triangles, 3 verts, 8 floats/vert
-
-    // Each face: two triangles (0,1,2) and (2,3,0) in quad
-    for (const Face& face : faces) {
-        // Vertices of the quad
-        Vertex quad[4];
-        for (int i = 0; i < 4; ++i) {
-            quad[i].pos = scaled[face.idx[i]];
-            quad[i].normal = face.normal;
-            quad[i].uv = uvs[i];
-        }
-        // Triangle 1: 0,1,2
-        for (int i : {0, 1, 2}) {
-            outVertices.push_back(quad[i].pos.x);
-            outVertices.push_back(quad[i].pos.y);
-            outVertices.push_back(quad[i].pos.z);
-            outVertices.push_back(quad[i].normal.x);
-            outVertices.push_back(quad[i].normal.y);
-            outVertices.push_back(quad[i].normal.z);
-            outVertices.push_back(quad[i].uv.x);
-            outVertices.push_back(quad[i].uv.y);
-        }
-        // Triangle 2: 2,3,0
-        for (int i : {2, 3, 0}) {
-            outVertices.push_back(quad[i].pos.x);
-            outVertices.push_back(quad[i].pos.y);
-            outVertices.push_back(quad[i].pos.z);
-            outVertices.push_back(quad[i].normal.x);
-            outVertices.push_back(quad[i].normal.y);
-            outVertices.push_back(quad[i].normal.z);
-            outVertices.push_back(quad[i].uv.x);
-            outVertices.push_back(quad[i].uv.y);
-        }
-    }
-}
-
 void createCuboidMesh(BoundCube& cube, float length, float width, float height) {
-    std::vector<float> vertices;
-    generateCuboidVertices(length, width, height, vertices);
+    // Centered at origin. Vertex order: each face, 2 triangles per face.
+    // Attribute layout: position (3), normal (3), uv (2)
+    float x = length / 2.0f, y = height / 2.0f, z = width / 2.0f;
+
+    float vertices[] = {
+        // back face (0,0,-1)
+        -x, -y, -z,  0.0f,  0.0f, -1.0f,  0.0f, 0.0f,
+         x,  y, -z,  0.0f,  0.0f, -1.0f,  1.0f, 1.0f,
+         x, -y, -z,  0.0f,  0.0f, -1.0f,  1.0f, 0.0f,
+         x,  y, -z,  0.0f,  0.0f, -1.0f,  1.0f, 1.0f,
+        -x, -y, -z,  0.0f,  0.0f, -1.0f,  0.0f, 0.0f,
+        -x,  y, -z,  0.0f,  0.0f, -1.0f,  0.0f, 1.0f,
+
+        // front face (0,0,1)
+        -x, -y,  z,  0.0f,  0.0f,  1.0f,  0.0f, 0.0f,
+         x, -y,  z,  0.0f,  0.0f,  1.0f,  1.0f, 0.0f,
+         x,  y,  z,  0.0f,  0.0f,  1.0f,  1.0f, 1.0f,
+         x,  y,  z,  0.0f,  0.0f,  1.0f,  1.0f, 1.0f,
+        -x,  y,  z,  0.0f,  0.0f,  1.0f,  0.0f, 1.0f,
+        -x, -y,  z,  0.0f,  0.0f,  1.0f,  0.0f, 0.0f,
+
+        // left face (-1,0,0)
+        -x,  y,  z, -1.0f,  0.0f,  0.0f,  1.0f, 0.0f,
+        -x,  y, -z, -1.0f,  0.0f,  0.0f,  1.0f, 1.0f,
+        -x, -y, -z, -1.0f,  0.0f,  0.0f,  0.0f, 1.0f,
+        -x, -y, -z, -1.0f,  0.0f,  0.0f,  0.0f, 1.0f,
+        -x, -y,  z, -1.0f,  0.0f,  0.0f,  0.0f, 0.0f,
+        -x,  y,  z, -1.0f,  0.0f,  0.0f,  1.0f, 0.0f,
+
+        // right face (1,0,0)
+         x,  y,  z,  1.0f,  0.0f,  0.0f,  1.0f, 0.0f,
+         x, -y, -z,  1.0f,  0.0f,  0.0f,  0.0f, 1.0f,
+         x,  y, -z,  1.0f,  0.0f,  0.0f,  1.0f, 1.0f,
+         x, -y, -z,  1.0f,  0.0f,  0.0f,  0.0f, 1.0f,
+         x,  y,  z,  1.0f,  0.0f,  0.0f,  1.0f, 0.0f,
+         x, -y,  z,  1.0f,  0.0f,  0.0f,  0.0f, 0.0f,
+
+         // bottom face (0,-1,0)
+         -x, -y, -z,  0.0f, -1.0f,  0.0f,  0.0f, 1.0f,
+          x, -y, -z,  0.0f, -1.0f,  0.0f,  1.0f, 1.0f,
+          x, -y,  z,  0.0f, -1.0f,  0.0f,  1.0f, 0.0f,
+          x, -y,  z,  0.0f, -1.0f,  0.0f,  1.0f, 0.0f,
+         -x, -y,  z,  0.0f, -1.0f,  0.0f,  0.0f, 0.0f,
+         -x, -y, -z,  0.0f, -1.0f,  0.0f,  0.0f, 1.0f,
+
+         // top face (0,1,0)
+         -x,  y, -z,  0.0f,  1.0f,  0.0f,  0.0f, 1.0f,
+          x,  y,  z,  0.0f,  1.0f,  0.0f,  1.0f, 0.0f,
+          x,  y, -z,  0.0f,  1.0f,  0.0f,  1.0f, 1.0f,
+          x,  y,  z,  0.0f,  1.0f,  0.0f,  1.0f, 0.0f,
+         -x,  y, -z,  0.0f,  1.0f,  0.0f,  0.0f, 1.0f,
+         -x,  y,  z,  0.0f,  1.0f,  0.0f,  0.0f, 0.0f
+    };
 
     if (cube.vao != 0) {
         glDeleteVertexArrays(1, &cube.vao);
@@ -104,7 +69,7 @@ void createCuboidMesh(BoundCube& cube, float length, float width, float height) 
 
     glBindVertexArray(cube.vao);
     glBindBuffer(GL_ARRAY_BUFFER, cube.vbo);
-    glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
 
     // pos (location = 0)
     glEnableVertexAttribArray(0);
@@ -119,7 +84,6 @@ void createCuboidMesh(BoundCube& cube, float length, float width, float height) 
     glBindVertexArray(0);
 }
 
-// ... scatterBoundCubes and renderBoundCubesPBR remain unchanged ...
 std::vector<BoundCube> scatterBoundCubes(
     int count,
     const glm::vec3& bboxMin, const glm::vec3& bboxMax,
