@@ -808,6 +808,27 @@ void Application::render() {
 	// Render L-system procedural space station
 	renderStationModulesPBR(spaceStationModules, view, proj, m_pbr_shader);
 
+	// Generate greebles for each module (do this after station generation)
+	static std::vector<Greeble> allGreebles;
+	// Regenerate greebles when station changes
+	if (paramsChanged || !m_greeblesGenerated) {
+		allGreebles.clear();
+
+		for (size_t i = 0; i < spaceStationModules.size(); ++i) {
+			auto moduleGreebles = generateGreeblesForModule(
+				spaceStationModules[i],
+				m_greebleCountPerModule,
+				m_stationRandomSeed + static_cast<unsigned>(i)
+			);
+			allGreebles.insert(allGreebles.end(), moduleGreebles.begin(), moduleGreebles.end());
+		}
+
+		m_greeblesGenerated = true;
+		std::cout << "Generated " << allGreebles.size() << " total greebles" << std::endl;
+	}
+
+
+
 	// Optionally render legacy cubes
 	if (m_showLegacyCubes) {
 		renderBoundCubesPBR(spaceStationCubes, view, proj, m_pbr_shader);
@@ -955,6 +976,11 @@ void Application::renderGUI() {
 	if (ImGui::Button("New Random Seed")) {
 		m_stationRandomSeed = static_cast<unsigned>(std::time(nullptr));
 	}
+	ImGui::Spacing();
+	if (ImGui::SliderInt("Greebles Per Module", &m_greebleCountPerModule, 0, 50)) {
+		m_greeblesGenerated = false; // Force regeneration
+	}
+
 
 	ImGui::Spacing();
 

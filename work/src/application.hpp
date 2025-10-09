@@ -135,6 +135,11 @@ private:
 	unsigned int m_stationRandomSeed = 0;
 	bool m_autoRandomSeed = false;  // ADD THIS LINE
 
+	// In Application class definition
+	int m_greebleCountPerModule = 15;
+	bool m_greeblesGenerated = false;
+	
+
 
 
 public:
