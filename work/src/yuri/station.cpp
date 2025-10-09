@@ -388,13 +388,13 @@ void createGreebleFlatCylinderMesh(Greeble& greeble, float radius, float height,
 }
 
 // Generate greebles scattered on the surface of a module
-// Generate greebles scattered on the surface of a module
 std::vector<Greeble> generateGreeblesForModule(
     const StationModule& module,
     int greebleCount,
     unsigned int randomSeed,
     float scaleFactor,
-    float scaleProportion)
+    float scaleProportion,
+    float scaleMix)
 {
     std::vector<Greeble> greebles;
     std::mt19937 rng(randomSeed);
@@ -424,11 +424,11 @@ std::vector<Greeble> generateGreeblesForModule(
         }
 
         // Determine if this greeble should be scaled
-        float greebleScale = 1.0f;
+        float normalScale = 1.0f;
         if (dist01(rng) < scaleProportion) {
-            greebleScale = scaleFactor;
+            normalScale = scaleFactor;
         }
-        greeble.scale = greebleScale;
+        greeble.scale = normalScale;
 
         // Random color variations (orange to red accent colors)
         greeble.color = glm::vec3(
@@ -442,8 +442,11 @@ std::vector<Greeble> generateGreeblesForModule(
         float theta = distAngle(rng);  // Random angle around cylinder
         float zLocal = distLength(rng) - module.length / 2.0f; // Random position along length
 
-        // Position on surface (slightly above to avoid z-fighting)
-        float surfaceOffset = module.radius + size * 0.5f * greebleScale; // Adjust for scale
+        // Calculate surface normal at this position (points outward from cylinder)
+        glm::vec3 surfaceNormal = glm::normalize(glm::vec3(cos(theta), sin(theta), 0.0f));
+
+        // Position on surface (account for normal scaling to prevent z-fighting)
+        float surfaceOffset = module.radius + size * 0.5f * normalScale;
         glm::vec3 localPos(
             surfaceOffset * cos(theta),
             surfaceOffset * sin(theta),
@@ -453,23 +456,33 @@ std::vector<Greeble> generateGreeblesForModule(
         // Create local transformation matrix
         glm::mat4 localTransform = glm::translate(glm::mat4(1.0f), localPos);
 
-        // Apply scale
-        localTransform = glm::scale(localTransform, glm::vec3(greebleScale));
+        // Align greeble to surface normal
+        glm::vec3 defaultUp(0.0f, 0.0f, 1.0f);
 
-        // Calculate surface normal at this position (points outward from cylinder)
-        glm::vec3 surfaceNormal = glm::normalize(glm::vec3(cos(theta), sin(theta), 0.0f));
-
-        // Align greeble with surface normal
-        glm::vec3 up(0.0f, 0.0f, 1.0f);
-        glm::vec3 rotAxis = glm::cross(up, surfaceNormal);
+        // Calculate rotation to align default up with surface normal
+        glm::vec3 rotAxis = glm::cross(defaultUp, surfaceNormal);
         if (glm::length(rotAxis) > 0.001f) {
-            float rotAngle = acos(glm::dot(up, surfaceNormal));
+            float rotAngle = acos(glm::clamp(glm::dot(defaultUp, surfaceNormal), -1.0f, 1.0f));
             localTransform = glm::rotate(localTransform, rotAngle, glm::normalize(rotAxis));
+        }
+        else if (glm::dot(defaultUp, surfaceNormal) < 0.0f) {
+            // Handle 180-degree flip case
+            localTransform = glm::rotate(localTransform, glm::pi<float>(), glm::vec3(1.0f, 0.0f, 0.0f));
         }
 
         // Add random rotation around surface normal for variety
         float randomRot = distAngle(rng);
         localTransform = glm::rotate(localTransform, randomRot, surfaceNormal);
+
+        // === LERP between uniform and normal-only scaling ===
+        // Uniform scale: (normalScale, normalScale, normalScale)
+        // Normal-only scale: (1.0, 1.0, normalScale)
+        glm::vec3 uniformScale(normalScale, normalScale, normalScale);
+        glm::vec3 normalOnlyScale(1.0f, 1.0f, normalScale);
+
+        // Mix between the two based on scaleMix parameter
+        glm::vec3 finalScale = glm::mix(uniformScale, normalOnlyScale, scaleMix);
+        localTransform = glm::scale(localTransform, finalScale);
 
         // Combine with module's world transform
         greeble.model = moduleTransform * localTransform;
@@ -479,6 +492,90 @@ std::vector<Greeble> generateGreeblesForModule(
 
     return greebles;
 }
+
+// Create a thin rectangular panel greeble (ideal for solar panels)
+void createGreebleSolarPanelMesh(Greeble& greeble, float width, float height) {
+    float w = width / 2.0f;
+    float h = height / 2.0f;
+    float thickness = 0.01f; // Very thin
+
+    std::vector<float> vertices = {
+        // Front face (large)
+        -w, -h, thickness,  0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
+         w, -h, thickness,  0.0f, 0.0f, 1.0f, 1.0f, 0.0f,
+         w,  h, thickness,  0.0f, 0.0f, 1.0f, 1.0f, 1.0f,
+         w,  h, thickness,  0.0f, 0.0f, 1.0f, 1.0f, 1.0f,
+        -w,  h, thickness,  0.0f, 0.0f, 1.0f, 0.0f, 1.0f,
+        -w, -h, thickness,  0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
+
+        // Back face
+        -w, -h, -thickness,  0.0f, 0.0f, -1.0f, 0.0f, 0.0f,
+         w,  h, -thickness,  0.0f, 0.0f, -1.0f, 1.0f, 1.0f,
+         w, -h, -thickness,  0.0f, 0.0f, -1.0f, 1.0f, 0.0f,
+         w,  h, -thickness,  0.0f, 0.0f, -1.0f, 1.0f, 1.0f,
+        -w, -h, -thickness,  0.0f, 0.0f, -1.0f, 0.0f, 0.0f,
+        -w,  h, -thickness,  0.0f, 0.0f, -1.0f, 0.0f, 1.0f,
+
+        // Thin edges (4 sides)
+        // Left
+        -w, -h, -thickness, -1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+        -w, -h,  thickness, -1.0f, 0.0f, 0.0f, 1.0f, 0.0f,
+        -w,  h,  thickness, -1.0f, 0.0f, 0.0f, 1.0f, 1.0f,
+        -w,  h,  thickness, -1.0f, 0.0f, 0.0f, 1.0f, 1.0f,
+        -w,  h, -thickness, -1.0f, 0.0f, 0.0f, 0.0f, 1.0f,
+        -w, -h, -thickness, -1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+
+        // Right
+         w, -h, -thickness,  1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+         w,  h,  thickness,  1.0f, 0.0f, 0.0f, 1.0f, 1.0f,
+         w, -h,  thickness,  1.0f, 0.0f, 0.0f, 1.0f, 0.0f,
+         w,  h,  thickness,  1.0f, 0.0f, 0.0f, 1.0f, 1.0f,
+         w, -h, -thickness,  1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+         w,  h, -thickness,  1.0f, 0.0f, 0.0f, 0.0f, 1.0f,
+
+         // Bottom
+         -w, -h, -thickness,  0.0f, -1.0f, 0.0f, 0.0f, 0.0f,
+          w, -h, -thickness,  0.0f, -1.0f, 0.0f, 1.0f, 0.0f,
+          w, -h,  thickness,  0.0f, -1.0f, 0.0f, 1.0f, 1.0f,
+          w, -h,  thickness,  0.0f, -1.0f, 0.0f, 1.0f, 1.0f,
+         -w, -h,  thickness,  0.0f, -1.0f, 0.0f, 0.0f, 1.0f,
+         -w, -h, -thickness,  0.0f, -1.0f, 0.0f, 0.0f, 0.0f,
+
+         // Top
+         -w,  h, -thickness,  0.0f,  1.0f, 0.0f, 0.0f, 0.0f,
+          w,  h,  thickness,  0.0f,  1.0f, 0.0f, 1.0f, 1.0f,
+          w,  h, -thickness,  0.0f,  1.0f, 0.0f, 1.0f, 0.0f,
+          w,  h,  thickness,  0.0f,  1.0f, 0.0f, 1.0f, 1.0f,
+         -w,  h, -thickness,  0.0f,  1.0f, 0.0f, 0.0f, 0.0f,
+         -w,  h,  thickness,  0.0f,  1.0f, 0.0f, 0.0f, 1.0f
+    };
+
+    if (greeble.vao != 0) {
+        glDeleteVertexArrays(1, &greeble.vao);
+        glDeleteBuffers(1, &greeble.vbo);
+    }
+
+    glGenVertexArrays(1, &greeble.vao);
+    glGenBuffers(1, &greeble.vbo);
+
+    glBindVertexArray(greeble.vao);
+    glBindBuffer(GL_ARRAY_BUFFER, greeble.vbo);
+    glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_STATIC_DRAW);
+
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
+
+    glBindVertexArray(0);
+
+    greeble.indexCount = 36;
+    greeble.type = Greeble::SMALL_CUBE; // Reuse cube type
+}
+
+
 
 // Render greebles using PBR shader
 void renderGreeblesPBR(

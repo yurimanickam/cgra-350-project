@@ -84,14 +84,18 @@ void createCylinderMesh(StationModule& module, float length, float radius, int s
 void createGreebleCubeMesh(Greeble& greeble, float size);
 void createGreebleFlatCylinderMesh(Greeble& greeble, float radius, float height, int segments = 16);
 
-// Generate greebles for a station module
+void createGreebleSolarPanelMesh(Greeble& greeble, float width, float height);
+
+
+
 // Generate greebles for a station module
 std::vector<Greeble> generateGreeblesForModule(
     const StationModule& module,
     int greebleCount,
     unsigned int randomSeed,
     float scaleFactor = 1.0f,
-    float scaleProportion = 0.0f);
+    float scaleProportion = 0.0f,
+    float scaleMix = 0.0f);
 
 // Generate a cuboid mesh (legacy support)
 void createCuboidMesh(BoundCube& cube, float length, float width, float height);
