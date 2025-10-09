@@ -820,7 +820,7 @@ void Application::render() {
 void Application::renderGUI() {
 	// setup window
 	ImGui::SetNextWindowPos(ImVec2(5, 5), ImGuiSetCond_Once);
-	ImGui::SetNextWindowSize(ImVec2(350, 400), ImGuiSetCond_Once);
+	ImGui::SetNextWindowSize(ImVec2(410, 650), ImGuiSetCond_Once);
 	ImGui::Begin("Lava Lamp Controls", 0);
 
 	// display current camera parameters
