@@ -25,11 +25,13 @@ struct StationModule {
 };
 
 // Greeble structure for surface details
+// Greeble structure for surface details
 struct Greeble {
     unsigned int vao = 0, vbo = 0, ebo = 0;
     glm::mat4 model = glm::mat4(1.0f);
     glm::vec3 color = glm::vec3(0.8, 0.3, 0.1); // Orange/red accent color
     unsigned int indexCount = 0;
+    float scale = 1.0f; // Add this line
 
     enum GreebleType {
         SMALL_CUBE,
@@ -83,10 +85,13 @@ void createGreebleCubeMesh(Greeble& greeble, float size);
 void createGreebleFlatCylinderMesh(Greeble& greeble, float radius, float height, int segments = 16);
 
 // Generate greebles for a station module
+// Generate greebles for a station module
 std::vector<Greeble> generateGreeblesForModule(
     const StationModule& module,
     int greebleCount,
-    unsigned int randomSeed);
+    unsigned int randomSeed,
+    float scaleFactor = 1.0f,
+    float scaleProportion = 0.0f);
 
 // Generate a cuboid mesh (legacy support)
 void createCuboidMesh(BoundCube& cube, float length, float width, float height);

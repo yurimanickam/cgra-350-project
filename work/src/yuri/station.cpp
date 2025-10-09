@@ -388,10 +388,13 @@ void createGreebleFlatCylinderMesh(Greeble& greeble, float radius, float height,
 }
 
 // Generate greebles scattered on the surface of a module
+// Generate greebles scattered on the surface of a module
 std::vector<Greeble> generateGreeblesForModule(
     const StationModule& module,
     int greebleCount,
-    unsigned int randomSeed)
+    unsigned int randomSeed,
+    float scaleFactor,
+    float scaleProportion)
 {
     std::vector<Greeble> greebles;
     std::mt19937 rng(randomSeed);
@@ -420,6 +423,13 @@ std::vector<Greeble> generateGreeblesForModule(
             createGreebleFlatCylinderMesh(greeble, cylRadius, cylHeight, 12);
         }
 
+        // Determine if this greeble should be scaled
+        float greebleScale = 1.0f;
+        if (dist01(rng) < scaleProportion) {
+            greebleScale = scaleFactor;
+        }
+        greeble.scale = greebleScale;
+
         // Random color variations (orange to red accent colors)
         greeble.color = glm::vec3(
             0.7f + dist01(rng) * 0.3f,  // Red: 0.7-1.0
@@ -433,7 +443,7 @@ std::vector<Greeble> generateGreeblesForModule(
         float zLocal = distLength(rng) - module.length / 2.0f; // Random position along length
 
         // Position on surface (slightly above to avoid z-fighting)
-        float surfaceOffset = module.radius + size * 0.5f; // Half greeble size above surface
+        float surfaceOffset = module.radius + size * 0.5f * greebleScale; // Adjust for scale
         glm::vec3 localPos(
             surfaceOffset * cos(theta),
             surfaceOffset * sin(theta),
@@ -442,6 +452,9 @@ std::vector<Greeble> generateGreeblesForModule(
 
         // Create local transformation matrix
         glm::mat4 localTransform = glm::translate(glm::mat4(1.0f), localPos);
+
+        // Apply scale
+        localTransform = glm::scale(localTransform, glm::vec3(greebleScale));
 
         // Calculate surface normal at this position (points outward from cylinder)
         glm::vec3 surfaceNormal = glm::normalize(glm::vec3(cos(theta), sin(theta), 0.0f));

@@ -138,6 +138,10 @@ private:
 	// In Application class definition
 	int m_greebleCountPerModule = 15;
 	bool m_greeblesGenerated = false;
+
+	// Greeble scaling controls
+	float m_greebleScaleFactor = 1.0f;
+	float m_greebleScaleProportion = 0.0f;
 	
 
 

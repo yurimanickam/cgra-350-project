@@ -809,21 +809,35 @@ void Application::render() {
 	renderStationModulesPBR(spaceStationModules, view, proj, m_pbr_shader);
 
 	// Generate greebles for each module (do this after station generation)
+// Generate greebles for each module (do this after station generation)
 	static std::vector<Greeble> allGreebles;
-	// Regenerate greebles when station changes
-	if (paramsChanged || !m_greeblesGenerated) {
+	// Regenerate greebles when station changes OR when greeble parameters change
+	static float lastScaleFactor = 1.0f;
+	static float lastScaleProportion = 0.0f;
+	static int lastGreebleCount = -1;
+
+	bool greebleParamsChanged = (lastScaleFactor != m_greebleScaleFactor ||
+		lastScaleProportion != m_greebleScaleProportion ||
+		lastGreebleCount != m_greebleCountPerModule);
+
+	if (paramsChanged || !m_greeblesGenerated || greebleParamsChanged) {
 		allGreebles.clear();
 
 		for (size_t i = 0; i < spaceStationModules.size(); ++i) {
 			auto moduleGreebles = generateGreeblesForModule(
 				spaceStationModules[i],
 				m_greebleCountPerModule,
-				m_stationRandomSeed + static_cast<unsigned>(i)
+				m_stationRandomSeed + static_cast<unsigned>(i),
+				m_greebleScaleFactor,
+				m_greebleScaleProportion
 			);
 			allGreebles.insert(allGreebles.end(), moduleGreebles.begin(), moduleGreebles.end());
 		}
 
 		m_greeblesGenerated = true;
+		lastScaleFactor = m_greebleScaleFactor;
+		lastScaleProportion = m_greebleScaleProportion;
+		lastGreebleCount = m_greebleCountPerModule;
 		std::cout << "Generated " << allGreebles.size() << " total greebles" << std::endl;
 	}
 
@@ -980,6 +994,25 @@ void Application::renderGUI() {
 	ImGui::Spacing();
 	if (ImGui::SliderInt("Greebles Per Module", &m_greebleCountPerModule, 0, 50)) {
 		m_greeblesGenerated = false; // Force regeneration
+	}
+
+	// Add these new controls:
+	if (ImGui::SliderFloat("Greeble Scale Factor", &m_greebleScaleFactor, 0.5f, 5.0f, "%.2f")) {
+		m_greeblesGenerated = false;
+	}
+	ImGui::SameLine();
+	if (ImGui::Button("?##scalefactor")) {}
+	if (ImGui::IsItemHovered()) {
+		ImGui::SetTooltip("Scale multiplier for affected greebles.\n1.0 = normal size, 2.0 = double size, etc.");
+	}
+
+	if (ImGui::SliderFloat("Scale Proportion", &m_greebleScaleProportion, 0.0f, 1.0f, "%.2f")) {
+		m_greeblesGenerated = false;
+	}
+	ImGui::SameLine();
+	if (ImGui::Button("?##scaleprop")) {}
+	if (ImGui::IsItemHovered()) {
+		ImGui::SetTooltip("Proportion of greebles randomly affected by scaling.\n0.0 = none, 0.5 = half, 1.0 = all");
 	}
 
 
