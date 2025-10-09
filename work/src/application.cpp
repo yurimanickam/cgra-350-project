@@ -711,11 +711,32 @@ void Application::render() {
 	// Space station cubes (now PBR gold material)
 	// ----------------------------
 	static std::vector<BoundCube> spaceStationCubes;
+	static std::vector<StationModule> spaceStationModules;
 	static bool cubesInitialized = false;
+	static bool stationInitialized = false;
 	static float lastSphereRadius = 10.0f;
+	static int lastComplexity = 2;
 
-	// Regenerate if requested or radius changed
-	if (!cubesInitialized || m_regenerateStation || lastSphereRadius != m_stationSphereRadius) {
+	// Regenerate if requested or parameters changed
+	if (m_regenerateStation || !stationInitialized || lastComplexity != m_stationComplexity) {
+		// Clean up old station modules
+		for (auto& module : spaceStationModules) {
+			if (module.vao != 0) {
+				glDeleteVertexArrays(1, &module.vao);
+				glDeleteBuffers(1, &module.vbo);
+			}
+		}
+		spaceStationModules.clear();
+
+		// Generate new procedural L-system space station
+		spaceStationModules = generateProceduralStation(m_stationComplexity, 10.0f, 1.5f);
+		stationInitialized = true;
+		m_regenerateStation = false;
+		lastComplexity = m_stationComplexity;
+	}
+
+	// Regenerate legacy cubes if requested
+	if (m_showLegacyCubes && (!cubesInitialized || lastSphereRadius != m_stationSphereRadius)) {
 		// Clean up old cubes
 		for (auto& cube : spaceStationCubes) {
 			if (cube.vao != 0) {
@@ -728,11 +749,10 @@ void Application::render() {
 		// Generate new cubes within sphere
 		spaceStationCubes = scatterBoundCubes(10, m_stationSphereRadius, 2.0f, 1.0f, 1.0f);
 		cubesInitialized = true;
-		m_regenerateStation = false;
 		lastSphereRadius = m_stationSphereRadius;
 	}
 
-	// Use PBR shader and bind required textures regardless of other toggles
+	// Use PBR shader and bind required textures
 	glUseProgram(m_pbr_shader);
 	glUniformMatrix4fv(glGetUniformLocation(m_pbr_shader, "projection"), 1, GL_FALSE, value_ptr(proj));
 	glUniformMatrix4fv(glGetUniformLocation(m_pbr_shader, "view"), 1, GL_FALSE, value_ptr(view));
@@ -749,8 +769,13 @@ void Application::render() {
 	// Bind gold PBR textures (albedo/normal/metallic/roughness/ao)
 	bindPBRTextures(gold);
 
-	// Render cubes with PBR
-	renderBoundCubesPBR(spaceStationCubes, view, proj, m_pbr_shader);
+	// Render L-system procedural space station
+	renderStationModulesPBR(spaceStationModules, view, proj, m_pbr_shader);
+
+	// Optionally render legacy cubes
+	if (m_showLegacyCubes) {
+		renderBoundCubesPBR(spaceStationCubes, view, proj, m_pbr_shader);
+	}
 
 	// draw the original model (if desired)
 	//m_model.draw(view, proj);
@@ -818,15 +843,36 @@ void Application::renderGUI() {
 
 	ImGui::Separator();
 	ImGui::Text("Space Station Controls");
-	if (ImGui::SliderFloat("Sphere Radius", &m_stationSphereRadius, 1.0f, 30.0f, "%.1f")) {
-		// Radius changed, will regenerate on next render
+	
+	// Complexity slider (1=minimal, 2=standard, 3=complex)
+	if (ImGui::SliderInt("Station Complexity", &m_stationComplexity, 1, 3)) {
+		// Complexity changed, will regenerate on next render
 	}
+	
+	// Display complexity name
+	const char* complexityNames[] = {"Minimal", "Standard", "Complex"};
+	if (m_stationComplexity >= 1 && m_stationComplexity <= 3) {
+		ImGui::Text("Type: %s", complexityNames[m_stationComplexity - 1]);
+	}
+	
 	if (ImGui::Button("Regenerate Station")) {
 		m_regenerateStation = true;
 	}
+	
+	ImGui::Checkbox("Show Legacy Cubes", &m_showLegacyCubes);
+	
+	if (m_showLegacyCubes) {
+		if (ImGui::SliderFloat("Cube Sphere Radius", &m_stationSphereRadius, 1.0f, 30.0f, "%.1f")) {
+			// Radius changed
+		}
+	}
+	
+	ImGui::Text("L-System Space Station:");
+	ImGui::Text("- Minimal: Simple branching");
+	ImGui::Text("- Standard: Cross-shaped modules");
+	ImGui::Text("- Complex: Dense structure");
 
-
-	// finish creating window
+// finish creating window
 	ImGui::End();
 }
 

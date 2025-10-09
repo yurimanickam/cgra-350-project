@@ -119,8 +119,11 @@ private:
 	bool m_UseSkybox = true;
 	bool m_UseSphere = false;
 
+	// Space Station parameters
+	int m_stationComplexity = 2; // 1=minimal, 2=standard, 3=complex
+	bool m_regenerateStation = true;
+	bool m_showLegacyCubes = false;
 	float m_stationSphereRadius = 10.0f;
-	bool m_regenerateStation = false;
 
 public:
 	// setup
