@@ -246,9 +246,7 @@ cgra::gl_mesh Application::createLampContainerMetal() {
 	mesh_builder builder;
 	const int segments = 64;
 
-	// ------------------------------
 	// Lower third of bulb (metal)
-	// ------------------------------
 	{
 		struct ProfilePoint {
 			float height;
@@ -297,9 +295,7 @@ cgra::gl_mesh Application::createLampContainerMetal() {
 		}
 	}
 
-	// ------------------------------
 	// Glass bottom cap (inverted)
-	// ------------------------------
 	{
 		float capHeight = 0.0f;
 		float capDepth = 0.8f;
@@ -341,9 +337,7 @@ cgra::gl_mesh Application::createLampContainerMetal() {
 		}
 	}
 
-	// ------------------------------
 	// Glass top cap
-	// ------------------------------
 	{
 		float capBottomY = 10.0f;
 		float capTopY = 11.0f;
@@ -399,9 +393,7 @@ cgra::gl_mesh Application::createLampContainerMetal() {
 		}
 	}
 
-	// ------------------------------
 	// Metal base
-	// ------------------------------
 	{
 		float baseHeight = -1.5f;
 		float baseRadiusBottom = 2.5f;
@@ -561,9 +553,7 @@ void Application::renderLavaLamp(const glm::mat4& view, const glm::mat4& proj) {
 		glUniform3fv(glGetUniformLocation(m_lavaShader, "uBlobColors"), count, value_ptr(colors[0]));
 	}
 
-	// -------------------------
-		// PASS 1: Depth-only pre-pass (metal + glass write depth)
-		// -------------------------
+	// PASS 1: Depth-only pre-pass (metal + glass write depth)
 	glEnable(GL_DEPTH_TEST);
 	glDepthFunc(GL_LESS);
 	glDepthMask(GL_TRUE);
@@ -574,9 +564,7 @@ void Application::renderLavaLamp(const glm::mat4& view, const glm::mat4& proj) {
 	m_lampMetalModel.draw(view, proj);
 
 
-	// -------------------------
-	// PASS 2: Metaball raymarching (reads depth, writes color + depth)
-	// -------------------------
+	// PASS 2: Metaball raymarching
 	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 	glDepthFunc(GL_LESS); // Pass if metaball <= existing depth
 	glDepthMask(GL_TRUE);
@@ -593,19 +581,15 @@ void Application::renderLavaLamp(const glm::mat4& view, const glm::mat4& proj) {
 	glUniform1i(glGetUniformLocation(m_lavaShader, "uIsFullscreenQuad"), 0);
 
 
-	// -------------------------
-	// PASS 3: Metal color pass (opaque, replaces depth-only metal)
-	// -------------------------
-	glDepthFunc(GL_LEQUAL); // Draw over existing metal depth
-	glDepthMask(GL_FALSE); // Don't modify depth
+	// PASS 3: Metal color pass
+	glDepthFunc(GL_LEQUAL);
+	glDepthMask(GL_FALSE);
 
 	glUniform1i(glGetUniformLocation(m_lavaShader, "uRenderMode"), 2);
 	m_lampMetalModel.draw(view, proj);
 
 
-	// -------------------------
-	// PASS 4: Glass color pass (transparent blending)
-	// -------------------------
+	// PASS 4: Glass color pass
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 	glDepthMask(GL_FALSE);

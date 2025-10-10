@@ -38,7 +38,6 @@ private:
 	float m_repulsionStrength = 2.0f;    // Inter-blob repulsion
 	float m_repulsionRange = 1.5f;       // Range of repulsion (in radii)
 
-	// Lamp dimensions � MATCH THESE TO YOUR MESH
 	float m_radius = 1.8f;      // max bulb radius (matches lamp mesh max)
 	float m_height = 10.0f;     // lamp height (matches mesh)
 	float m_baseHeight = 2.0f;  // Heating element height (glass bottom height)
