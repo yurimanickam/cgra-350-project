@@ -244,7 +244,6 @@ void main() {
 	while (t < tEnd && step < maxSteps) {
 		vec3 p = rayOrigin + rayDir * t;
 
-		// Compute ACTUAL glass radius at this height (matches your mesh geometry)
 		float glassBottomY = 1.7;
 		float glassTopY = 10.0;
 
@@ -271,7 +270,6 @@ void main() {
 
 		if (p.y >= 0.0 && p.y <= uLampHeight) {
 			float field = computeField(p);
-			// Check against threshold (note: with new formula, typical threshold is 0.5-2.0)
 			if (field >= uThreshold) {
 				// Refine hit position with a couple binary search steps for smoother surface
 				float tHit = t;
