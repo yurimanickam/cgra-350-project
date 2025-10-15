@@ -104,11 +104,36 @@ vec3 computeGradient(vec3 p) {
 	return vec3(0, 1, 0);
 }
 
-// Simple shading
+// Simple shading for glass and metal
 vec3 simpleShading(vec3 pos, vec3 normal, vec3 baseColor) {
 	vec3 lightDir = normalize(uLightPos - pos);
 	float diff = max(dot(normal, lightDir), 0.0) * 0.8 + 0.2;
 	return baseColor * diff;
+}
+
+// Enhanced shading with glow for metaballs only
+vec3 glowShading(vec3 pos, vec3 normal, vec3 baseColor) {
+	vec3 lightDir = normalize(uLightPos - pos);
+	vec3 viewDir = normalize(uCameraPos - pos);
+
+	// Diffuse lighting
+	float diff = max(dot(normal, lightDir), 0.0) * 0.6 + 0.3;
+
+	// Fresnel effect for rim glow (edges glow more)
+	float fresnel = pow(1.0 - max(dot(normal, viewDir), 0.0), 3.0);
+
+	// Subsurface scattering approximation (light passing through)
+	float backlight = max(dot(viewDir, -lightDir), 0.0);
+	float subsurface = pow(backlight, 4.0) * 0.5;
+
+	// Emissive glow - blobs emit their own light
+	float emissive = 1.2;
+
+	// Combine all lighting components
+	vec3 diffuseColor = baseColor * diff;
+	vec3 glowColor = baseColor * (fresnel * 1.5 + subsurface + emissive);
+
+	return diffuseColor + glowColor;
 }
 
 // Robust ray-cylinder intersection (capped by minY,maxY)
@@ -194,6 +219,7 @@ void main() {
 		vec3 baseColor = vec3(0.7, 0.7, 0.75);
 		vec3 shaded = simpleShading(FragPos, normalize(Normal), baseColor);
 		FragColor = vec4(shaded, 1.0);
+		gl_FragDepth = gl_FragCoord.z; 
 		return;
 	}
 
@@ -294,7 +320,11 @@ void main() {
 	if (hit) {
 		vec3 normal = computeGradient(hitPos);
 		vec3 baseColor = computeBlobColor(hitPos);
-		vec3 color = simpleShading(hitPos, normal, baseColor);
+		vec3 color = glowShading(hitPos, normal, baseColor);
+
+		// Boost color intensity for better glow
+		color *= 1.5;
+
 		FragColor = vec4(color, 1.0);
 
 		// Correct depth for compositing
