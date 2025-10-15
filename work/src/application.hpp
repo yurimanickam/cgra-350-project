@@ -20,7 +20,7 @@
 struct basic_model {
 	GLuint shader = 0;
 	cgra::gl_mesh mesh;
-	glm::vec3 color{ 0.7 };
+	glm::vec3 color{ 0.7f };
 	glm::mat4 modelTransform{ 1.0 };
 	GLuint texture;
 
@@ -36,8 +36,8 @@ private:
 	GLFWwindow* m_window;
 
 	// oribital camera
-	float m_pitch = .86;
-	float m_yaw = -.86;
+	float m_pitch = 0.86f;
+	float m_yaw = -0.86f;
 	float m_distance = 20;
 
 	// last input
@@ -76,45 +76,10 @@ private:
 	bool m_showLavaLamp = true;
 	bool m_animateLamp = true;
 
-	// Helper methods for lava lamp
-	void initializeLavaLamp();
-	void renderLavaLamp(const glm::mat4& view, const glm::mat4& proj);
-	cgra::gl_mesh createLampContainerGlass();
-	cgra::gl_mesh createLampContainerMetal();
-	cgra::gl_mesh createFullscreenQuad(); // Add method for fullscreen quad
-
-	// Depth FBO helper
-	void ensureDepthFBO(int width, int height);
 
 	bool m_UseSkybox = true;
 	bool m_UseSphere = false;
 
-	// Space Station parameters
-	int m_stationComplexity = 2; // 1=minimal, 2=standard, 3=complex
-	bool m_regenerateStation = true;
-	bool m_showLegacyCubes = false;
-	float m_stationSphereRadius = 10.0f;
-
-	int m_stationIterations = 3;
-	float m_stationLengthScale = 0.7f;
-	float m_stationRadiusScale = 0.75f;
-	float m_stationBranchAngle = 90.0f;
-	float m_stationBranchProbability = 0.8f; // NEW: Add this
-	float m_stationMainLength = 8.0f;
-	float m_stationMainRadius = 1.5f;
-	unsigned int m_stationRandomSeed = 0;
-	bool m_autoRandomSeed = false;  // ADD THIS LINE
-
-	// In Application class definition
-	int m_greebleCountPerModule = 15;
-	bool m_greeblesGenerated = false;
-
-
-
-	// Greeble scaling controls
-	float m_greebleScaleFactor = 1.0f;
-	float m_greebleScaleProportion = 0.0f;
-	float m_greebleScaleMix = 0.0f; // 0.0 = uniform scaling, 1.0 = normal-only scaling
 	
 public:
 	// setup
