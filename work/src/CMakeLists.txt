@@ -27,6 +27,11 @@ SET(sources
 
 	"david/lava_lamp.cpp"
 	"david/lava_lamp.hpp"
+
+	"matt/pbr.cpp"
+	"matt/pbr.hpp"
+	"matt/render_utils.cpp"
+	"matt/render_utils.hpp"
 )
 
 # Add executable target and link libraries
