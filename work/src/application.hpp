@@ -7,7 +7,6 @@
 // project
 #include "opengl.hpp"
 #include "cgra/cgra_mesh.hpp"
-#include "skeleton_model.hpp"
 
 //teammate includes
 #include "david/lava_lamp.hpp"
