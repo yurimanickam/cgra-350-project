@@ -23,6 +23,10 @@ using namespace std;
 using namespace cgra;
 using namespace glm;
 
+// timing
+float deltaTime = 0.0f;
+float lastFrame = 0.0f;
+
 void basic_model::draw(const glm::mat4& view, const glm::mat4 proj) {
 	mat4 modelview = view * modelTransform;
 
@@ -57,6 +61,10 @@ void Application::render() {
 	glfwGetFramebufferSize(m_window, &width, &height);
 	m_windowsize = vec2(width, height); // update window size
 	glViewport(0, 0, width, height); // set the viewport to draw to the entire window
+
+	float currentFrame = glfwGetTime();
+	deltaTime = currentFrame - lastFrame;
+	lastFrame = currentFrame;
 
 	// clear the back-buffer
 	glClearColor(0.1f, 0.1f, 0.15f, 1.0f); // Darker background for better lava lamp visibility
@@ -102,10 +110,18 @@ void Application::render() {
 		glUniformMatrix3fv(glGetUniformLocation(m_pbr_shader, "normalMatrix"), 1, GL_FALSE, value_ptr(glm::transpose(glm::inverse(glm::mat3(model)))));
 		renderSphere();
 
-		// gold
+		// plastic
 		bindPBRTextures(plastic);
 		model = glm::mat4(1.0f);
-		model = glm::translate(model, glm::vec3(1.5, 0.5, 0.0));
+		model = glm::translate(model, glm::vec3(5.5, 5.0, 0.0));
+		model = glm::scale(model, glm::vec3(2.5, 2.5, 2.5));
+		glUniformMatrix4fv(glGetUniformLocation(m_pbr_shader, "model"), 1, GL_FALSE, value_ptr(model));
+		glUniformMatrix3fv(glGetUniformLocation(m_pbr_shader, "normalMatrix"), 1, GL_FALSE, value_ptr(glm::transpose(glm::inverse(glm::mat3(model)))));
+		renderSphere();
+
+		bindPBRTextures(cloth);
+		model = glm::mat4(1.0f);
+		model = glm::translate(model, glm::vec3(-5.5, 5.0, 0.0));
 		model = glm::scale(model, glm::vec3(2.5, 2.5, 2.5));
 		glUniformMatrix4fv(glGetUniformLocation(m_pbr_shader, "model"), 1, GL_FALSE, value_ptr(model));
 		glUniformMatrix3fv(glGetUniformLocation(m_pbr_shader, "normalMatrix"), 1, GL_FALSE, value_ptr(glm::transpose(glm::inverse(glm::mat3(model)))));
@@ -140,7 +156,7 @@ void Application::render() {
 void Application::renderGUI() {
 	// setup window
 	ImGui::SetNextWindowPos(ImVec2(5, 5), ImGuiSetCond_Once);
-	ImGui::SetNextWindowSize(ImVec2(410, 650), ImGuiSetCond_Once);
+	ImGui::SetNextWindowSize(ImVec2(400, 350), ImGuiSetCond_Once);
 	ImGui::Begin("Lava Lamp Controls", 0);
 
 	// display current camera parameters
@@ -156,11 +172,6 @@ void Application::renderGUI() {
 	ImGui::Checkbox("Wireframe", &m_showWireframe);
 	ImGui::SameLine();
 	if (ImGui::Button("Screenshot")) rgba_image::screenshot(true);
-
-	ImGui::Separator();
-	ImGui::Checkbox("Use Skybox", &m_UseSkybox);
-	ImGui::SameLine();
-	ImGui::Checkbox("Draw Sphere", &m_UseSphere);
 
 	ImGui::Separator();
 	ImGui::Text("Lava Lamp Controls");
@@ -180,6 +191,32 @@ void Application::renderGUI() {
 	}
 
 	// In Application::renderGUI(), replace the Space Station section
+	ImGui::End();
+
+	ImGui::SetNextWindowPos(ImVec2(410, 5), ImGuiSetCond_Once);
+	ImGui::SetNextWindowSize(ImVec2(400, 200), ImGuiSetCond_Once);
+	ImGui::Begin("PBR Controls", 0);
+
+	ImGui::Text("Physically Based Rendering (PBR) Settings");
+	ImGui::Checkbox("Use Skybox", &m_UseSkybox);
+	ImGui::SameLine();
+	ImGui::Checkbox("Draw Sphere", &m_UseSphere);
+
+	ImGui::Separator();
+
+	ImGui::Text("Change IBL Environment");
+	
+	if (ImGui::Button("Space Environment")) {
+		loadPBRShaders(CGRA_SRCDIR + std::string("//res//textures//space.hdr"));
+	}
+
+	if (ImGui::Button("Studio Environment")) {
+		loadPBRShaders(CGRA_SRCDIR + std::string("//res//textures//studio.hdr"));
+	}
+
+	if (ImGui::Button("Sunset Environment")) {
+		loadPBRShaders(CGRA_SRCDIR + std::string("//res//textures//sunset.hdr"));
+	}
 	ImGui::End();
 }
 

@@ -16,6 +16,7 @@
 
 textureData gold;
 textureData plastic;
+textureData cloth;
 
 GLuint m_shader = 0;
 GLuint m_default_shader = 0;
@@ -92,7 +93,7 @@ void bindPBRTextures(const textureData& tex) {
 	glBindTexture(GL_TEXTURE_2D, tex.ao);
 }
 
-void loadPBRShaders() {
+void loadPBRShaders(const std::string& hdrPath = CGRA_SRCDIR + std::string("//res//textures//space.hdr")) {
 	glUseProgram(m_pbr_shader);
 	glUniform1i(glGetUniformLocation(m_pbr_shader, "irradianceMap"), 0);
 	glUniform1i(glGetUniformLocation(m_pbr_shader, "prefilterMap"), 1);
@@ -107,8 +108,20 @@ void loadPBRShaders() {
 	glUniform1i(glGetUniformLocation(m_background_shader, "environmentMap"), 0);
 
 	// texture loading
-	gold = loadPBRTextures(CGRA_SRCDIR + std::string("/res/textures/gold"));
-	plastic = loadPBRTextures(CGRA_SRCDIR + std::string("/res/textures/plastic"));
+	static bool texturesLoaded = false;
+	if (!texturesLoaded) {
+		gold = loadPBRTextures(CGRA_SRCDIR + std::string("/res/textures/gold"));
+		plastic = loadPBRTextures(CGRA_SRCDIR + std::string("/res/textures/plastic"));
+		cloth = loadPBRTextures(CGRA_SRCDIR + std::string("/res/textures/cloth"));
+		texturesLoaded = true;
+	}
+
+	// Clean up old textures if they exist
+	if (hdrTexture != 0) glDeleteTextures(1, &hdrTexture);
+	if (envCubemap != 0) glDeleteTextures(1, &envCubemap);
+	if (irradianceMap != 0) glDeleteTextures(1, &irradianceMap);
+	if (prefilterMap != 0) glDeleteTextures(1, &prefilterMap);
+	if (brdfLUTTexture != 0) glDeleteTextures(1, &brdfLUTTexture);
 
 	//pbr framebuffer
 	unsigned int captureFBO;
@@ -124,7 +137,7 @@ void loadPBRShaders() {
 	//load hdr environment map
 	stbi_set_flip_vertically_on_load(true);
 	int width, height, nrComponents;
-	float* data = stbi_loadf((CGRA_SRCDIR + std::string("//res//textures//space.hdr")).c_str(), &width, &height, &nrComponents, 0);
+	float* data = stbi_loadf(hdrPath.c_str(), &width, &height, &nrComponents, 0);
 	if (data) {
 		glGenTextures(1, &hdrTexture);
 		glBindTexture(GL_TEXTURE_2D, hdrTexture);
@@ -293,6 +306,10 @@ void loadPBRShaders() {
 	glUniformMatrix4fv(glGetUniformLocation(m_pbr_shader, "projection"), 1, false, value_ptr(projection));
 	glUseProgram(m_background_shader);
 	glUniformMatrix4fv(glGetUniformLocation(m_background_shader, "projection"), 1, false, value_ptr(projection));
+
+	// clean up buffers
+	glDeleteFramebuffers(1, &captureFBO);
+	glDeleteRenderbuffers(1, &captureRBO);
 }
 
 void buildShaders() {

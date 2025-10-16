@@ -12,6 +12,7 @@ struct textureData {
 // textures
 extern textureData gold;
 extern textureData plastic;
+extern textureData cloth;
 
 // shaders
 extern GLuint m_shader;
@@ -34,5 +35,5 @@ extern unsigned int hdrTexture;
 GLuint loadTexture(char const* path);
 textureData loadPBRTextures(const std::string& basePath);
 void bindPBRTextures(const textureData& tex);
-void loadPBRShaders();
+void loadPBRShaders(const std::string& hdrPath);
 void buildShaders();

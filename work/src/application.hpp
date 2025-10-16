@@ -76,7 +76,7 @@ private:
 	bool m_animateLamp = true;
 
 
-	bool m_UseSkybox = true;
+	bool m_UseSkybox = false;
 	bool m_UseSphere = false;
 
 	
