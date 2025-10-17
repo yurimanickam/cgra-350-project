@@ -803,55 +803,18 @@ cgra::gl_mesh LavaLamp::createLampContainerMetal() {
 		}
 	}
 
-	// Glass bottom cap (inverted)
-	{
-		float capHeight = 0.0f;
-		float capDepth = 0.8f;
-		float capRadius = 1.2f;
-		int capStart = builder.vertices.size();
-
-		for (int i = 0; i <= segments; ++i) {
-			float angle = 2.0f * pi<float>() * i / segments;
-			float xOuter = capRadius * cos(angle);
-			float zOuter = capRadius * sin(angle);
-
-			cgra::mesh_vertex vTop;
-			vTop.pos = vec3(xOuter, capHeight, zOuter);
-			vTop.norm = normalize(vec3(xOuter, 0, zOuter));
-			vTop.uv = vec2(float(i) / segments, 0.0f);
-
-			cgra::mesh_vertex vBottom;
-			vBottom.pos = vec3(0, capHeight - capDepth, 0);
-			vBottom.norm = vec3(0, -1, 0);
-			vBottom.uv = vec2(0.5f, 1.0f);
-
-			builder.push_vertex(vTop);
-			builder.push_vertex(vBottom);
-		}
-
-		for (int i = 0; i < segments; ++i) {
-			int i0 = capStart + i * 2;
-			int i1 = capStart + i * 2 + 1;
-			int i2 = capStart + (i + 1) * 2;
-			int i3 = capStart + (i + 1) * 2 + 1;
-
-			builder.push_index(i0);
-			builder.push_index(i2);
-			builder.push_index(i1);
-
-			builder.push_index(i1);
-			builder.push_index(i2);
-			builder.push_index(i3);
-		}
-	}
-
-	// Glass top cap
+	// Metal top cap
 	{
 		float capBottomY = 10.0f;
 		float capTopY = 11.0f;
 		float capRadiusBottom = 1.0f;
 		float capRadiusTop = 0.8f;
 		int capStart = builder.vertices.size();
+
+		// Calculate proper surface normal accounting for the taper
+		float radiusDiff = capRadiusBottom - capRadiusTop;
+		float height = capTopY - capBottomY;
+		vec3 slopeDir = normalize(vec3(radiusDiff, height, 0));
 
 		for (int i = 0; i <= segments; ++i) {
 			float angle = 2.0f * pi<float>() * i / segments;
@@ -860,11 +823,21 @@ cgra::gl_mesh LavaLamp::createLampContainerMetal() {
 			float x2 = capRadiusTop * cos(angle);
 			float z2 = capRadiusTop * sin(angle);
 
+			// Calculate normal for tapered surface
+			vec3 radialDir = normalize(vec3(cos(angle), 0, sin(angle)));
+			vec3 surfaceNormal = normalize(vec3(
+				radialDir.x * slopeDir.y,
+				slopeDir.x,
+				radialDir.z * slopeDir.y
+			));
+
 			cgra::mesh_vertex v1, v2;
 			v1.pos = vec3(x1, capBottomY, z1);
 			v2.pos = vec3(x2, capTopY, z2);
-			v1.norm = normalize(vec3(x1, 0, z1));
-			v2.norm = normalize(vec3(x2, 0, z2));
+			v1.norm = surfaceNormal;
+			v2.norm = surfaceNormal;
+			v1.uv = vec2(float(i) / segments, 0.0f);
+			v2.uv = vec2(float(i) / segments, 1.0f);
 
 			builder.push_vertex(v1);
 			builder.push_vertex(v2);
@@ -895,11 +868,13 @@ cgra::gl_mesh LavaLamp::createLampContainerMetal() {
 		for (int i = 0; i < segments; ++i) {
 			int outer0 = capStart + i * 2 + 1;
 			int outer1 = capStart + (i + 1) * 2 + 1;
+			// Reversed winding order for correct front-face orientation
 			builder.push_index(topCenter);
-			builder.push_index(outer0);
 			builder.push_index(outer1);
+			builder.push_index(outer0);
 		}
 	}
+
 
 	// Metal base
 	{
