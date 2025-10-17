@@ -210,7 +210,16 @@ void main() {
 	if (uRenderMode == 0) {
 		vec3 baseColor = vec3(0.2, 0.6, 1.0);
 		vec3 shaded = simpleShading(FragPos, normalize(Normal), baseColor);
-		FragColor = vec4(shaded, 0.35);
+		
+		// Fresnel effect: more opaque at grazing angles, more transparent when viewed directly
+		vec3 viewDir = normalize(uCameraPos - FragPos);
+		vec3 norm = normalize(Normal);
+		float fresnel = pow(1.0 - abs(dot(norm, viewDir)), 2.0);
+		
+		// Alpha ranges from 0.15 (direct view) to 0.65 (grazing angle)
+		float alpha = mix(0.15, 0.65, fresnel);
+		
+		FragColor = vec4(shaded, alpha);
 		return;
 	}
 
