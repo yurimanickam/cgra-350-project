@@ -7,11 +7,12 @@
 // project
 #include "opengl.hpp"
 #include "cgra/cgra_mesh.hpp"
+#include "skeleton_model.hpp"
 
 //teammate includes
 #include "david/lava_lamp.hpp"
+
 #include "yuri/station.hpp"
-#include "matt/pbr.hpp"
 
 // Basic model that holds the shader, mesh and transform for drawing.
 // Can be copied and modified for adding in extra information for drawing
@@ -19,11 +20,20 @@
 struct basic_model {
 	GLuint shader = 0;
 	cgra::gl_mesh mesh;
-	glm::vec3 color{ 0.7f };
+	glm::vec3 color{ 0.7 };
 	glm::mat4 modelTransform{ 1.0 };
 	GLuint texture;
 
 	void draw(const glm::mat4& view, const glm::mat4 proj);
+};
+
+// texture data struct
+struct textureData {
+	GLuint albedo = 0;
+	GLuint normal = 0;
+	GLuint metallic = 0;
+	GLuint roughness = 0;
+	GLuint ao = 0;
 };
 
 // Main application class
@@ -35,8 +45,8 @@ private:
 	GLFWwindow* m_window;
 
 	// oribital camera
-	float m_pitch = 0.86f;
-	float m_yaw = -0.86f;
+	float m_pitch = .86;
+	float m_yaw = -.86;
 	float m_distance = 20;
 
 	// last input
@@ -75,11 +85,70 @@ private:
 	bool m_showLavaLamp = true;
 	bool m_animateLamp = true;
 
+	// Helper methods for lava lamp
+	void initializeLavaLamp();
+	void renderLavaLamp(const glm::mat4& view, const glm::mat4& proj);
+	cgra::gl_mesh createLampContainerGlass();
+	cgra::gl_mesh createLampContainerMetal();
+	cgra::gl_mesh createFullscreenQuad(); // Add method for fullscreen quad
 
-	bool m_UseSkybox = false;
+	// Depth FBO helper
+	void ensureDepthFBO(int width, int height);
+
+	// texture data
+	textureData gold;
+
+	// shaders
+	GLuint m_shader = 0;
+	GLuint m_default_shader = 0;
+	GLuint m_pbr_shader = 0;
+	GLuint m_cubemap_shader = 0;
+	GLuint m_irradiance_shader = 0;
+	GLuint m_prefilter_shader = 0;
+	GLuint m_brdf_shader = 0;
+	GLuint m_background_shader = 0;
+
+	int m_selected_shader = 0;
+
+	unsigned int irradianceMap;
+	unsigned int prefilterMap;
+	unsigned int brdfLUTTexture;
+	unsigned int envCubemap;
+	unsigned int hdrTexture;
+
+	bool m_UseSkybox = true;
 	bool m_UseSphere = false;
 
+	// Space Station parameters
+	int m_stationComplexity = 2; // 1=minimal, 2=standard, 3=complex
+	bool m_regenerateStation = true;
+	bool m_showLegacyCubes = false;
+	float m_stationSphereRadius = 10.0f;
+
+	int m_stationIterations = 3;
+	float m_stationLengthScale = 0.7f;
+	float m_stationRadiusScale = 0.75f;
+	float m_stationBranchAngle = 90.0f;
+	float m_stationBranchProbability = 0.8f; // NEW: Add this
+	float m_stationMainLength = 8.0f;
+	float m_stationMainRadius = 1.5f;
+	unsigned int m_stationRandomSeed = 0;
+	bool m_autoRandomSeed = false;  // ADD THIS LINE
+
+	// In Application class definition
+	int m_greebleCountPerModule = 15;
+	bool m_greeblesGenerated = false;
+
+
+
+	// Greeble scaling controls
+	float m_greebleScaleFactor = 1.0f;
+	float m_greebleScaleProportion = 0.0f;
+	float m_greebleScaleMix = 0.0f; // 0.0 = uniform scaling, 1.0 = normal-only scaling
 	
+
+
+
 public:
 	// setup
 	Application(GLFWwindow*);
@@ -98,4 +167,12 @@ public:
 	void scrollCallback(double xoffset, double yoffset);
 	void keyCallback(int key, int scancode, int action, int mods);
 	void charCallback(unsigned int c);
+
+	void loadPBRShaders();
+	GLuint loadTexture(char const* path);
+	textureData loadPBRTextures(const std::string& basePath);
+	void bindPBRTextures(const textureData& tex);
+	void renderCube();
+	void renderQuad();
+	void renderSphere();
 };

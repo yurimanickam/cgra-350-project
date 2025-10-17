@@ -56,22 +56,6 @@ private:
 	std::mt19937 m_rng;
 	std::uniform_real_distribution<float> m_randomDist;
 
-	//Rendering Resources
-	GLuint m_lavaShader = 0;
-	GLuint m_depthFBO = 0;
-	GLuint m_depthTextureFront = 0; // depth from front faces
-	GLuint m_depthTextureBack = 0;  // depth from back faces
-	int m_depthTexW = 0, m_depthTexH = 0;
-
-	cgra::gl_mesh m_lampGlassMesh;
-	cgra::gl_mesh m_lampMetalMesh;
-	cgra::gl_mesh m_fullscreenQuadMesh;
-
-	float m_lastTime = 0.0f;
-	glm::vec2 m_windowsize = glm::vec2(1280, 720);
-
-
-
 	// Helper functions (simulation internals)
 	void updateBlobPhysics(LavaBlob& blob, float dt);
 	void handleBlobInteractions();
@@ -123,19 +107,4 @@ public:
 
 	void mergeBlobsIfClose();
 	void splitLargeBlobs();
-
-	void ensureDepthFBO(int width, int height);
-	void initialiseLavaLamp(const std::string& shader_vertex_path, const std::string& shader_fragment_path);
-	cgra::gl_mesh createFullscreenQuad();
-	cgra::gl_mesh createLampContainerGlass();
-	cgra::gl_mesh createLampContainerMetal();
-
-	void renderLavaLamp(const glm::mat4& view, const glm::mat4& proj, GLFWwindow* window,
-		bool animate, bool show, float threshold,
-		float heaterTemp, float gravity);
-
-	GLuint getLavaShader() const { return m_lavaShader; }
-	GLuint getDepthFBO() const { return m_depthFBO; }
-	GLuint getDepthTextureFront() const { return m_depthTextureFront; }
-	GLuint getDepthTextureBack() const { return m_depthTextureBack; }
 };
