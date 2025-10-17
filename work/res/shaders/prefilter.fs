@@ -6,7 +6,6 @@ uniform samplerCube environmentMap;
 uniform float roughness;
 
 const float PI = 3.14159265359;
-// ----------------------------------------------------------------------------
 float DistributionGGX(vec3 N, vec3 H, float roughness)
 {
     float a = roughness*roughness;
@@ -20,7 +19,6 @@ float DistributionGGX(vec3 N, vec3 H, float roughness)
 
     return nom / denom;
 }
-// ----------------------------------------------------------------------------
 // http://holger.dammertz.org/stuff/notes_HammersleyOnHemisphere.html
 // efficient VanDerCorpus calculation.
 float RadicalInverse_VdC(uint bits) 
@@ -32,12 +30,12 @@ float RadicalInverse_VdC(uint bits)
      bits = ((bits & 0x00FF00FFu) << 8u) | ((bits & 0xFF00FF00u) >> 8u);
      return float(bits) * 2.3283064365386963e-10; // / 0x100000000
 }
-// ----------------------------------------------------------------------------
+
 vec2 Hammersley(uint i, uint N)
 {
 	return vec2(float(i)/float(N), RadicalInverse_VdC(i));
 }
-// ----------------------------------------------------------------------------
+
 vec3 ImportanceSampleGGX(vec2 Xi, vec3 N, float roughness)
 {
 	float a = roughness*roughness;
@@ -60,7 +58,7 @@ vec3 ImportanceSampleGGX(vec2 Xi, vec3 N, float roughness)
 	vec3 sampleVec = tangent * H.x + bitangent * H.y + N * H.z;
 	return normalize(sampleVec);
 }
-// ----------------------------------------------------------------------------
+
 void main()
 {		
     vec3 N = normalize(WorldPos);
