@@ -747,6 +747,54 @@ cgra::gl_mesh LavaLamp::createLampContainerGlass() {
 		builder.push_index(nextAbove);
 	}
 
+	// Glass bottom cap (at y=1.7f, radius=1.8f)
+	{
+		float capY = 1.7f;
+		float capRadius = 1.8f;
+
+		// Get the index of the first ring (bottom ring of the cylinder)
+		int bottomRingStart = 0; // This should be the first ring created
+
+		// Create center vertex
+		int centerIdx = builder.vertices.size();
+		cgra::mesh_vertex centerVert;
+		centerVert.pos = vec3(0, capY, 0);
+		centerVert.norm = vec3(0, -1, 0);
+		centerVert.uv = vec2(0.5f, 0.5f);
+		builder.push_vertex(centerVert);
+
+		// Create fan triangles from center to ring
+		for (int i = 0; i < segments; ++i) {
+			builder.push_index(centerIdx);
+			builder.push_index(bottomRingStart + i);
+			builder.push_index(bottomRingStart + i + 1);
+		}
+	}
+
+	// Glass top cap (at y=10.0f, radius=1.0f)
+	{
+		float capY = 10.0f;
+		float capRadius = 1.0f;
+
+		// The second ring is the top of the cylinder
+		int topRingStart = segments + 1; // Second ring starts after first ring
+
+		// Create center vertex
+		int centerIdx = builder.vertices.size();
+		cgra::mesh_vertex centerVert;
+		centerVert.pos = vec3(0, capY, 0);
+		centerVert.norm = vec3(0, 1, 0);
+		centerVert.uv = vec2(0.5f, 0.5f);
+		builder.push_vertex(centerVert);
+
+		// Create fan triangles from center to ring
+		for (int i = 0; i < segments; ++i) {
+			builder.push_index(centerIdx);
+			builder.push_index(topRingStart + i + 1);
+			builder.push_index(topRingStart + i);
+		}
+	}
+
 	return builder.build();
 }
 
@@ -896,8 +944,20 @@ cgra::gl_mesh LavaLamp::createLampContainerMetal() {
 			cgra::mesh_vertex v1, v2;
 			v1.pos = vec3(x1, y1, z1);
 			v2.pos = vec3(x2, y2, z2);
-			v1.norm = normalize(vec3(x1, 0, z1));
-			v2.norm = normalize(vec3(x2, 0, z2));
+			
+			// Calculate surface normal
+			float baseRadiusDiff = baseRadiusBottom - baseRadiusTop;
+			float baseHeight = y2 - y1;
+			vec3 baseSlopeDir = normalize(vec3(baseRadiusDiff, baseHeight, 0));
+			vec3 baseRadialDir = normalize(vec3(cos(angle), 0, sin(angle)));
+			vec3 baseSurfaceNormal = normalize(vec3(
+				baseRadialDir.x * baseSlopeDir.y,
+				baseSlopeDir.x,
+				baseRadialDir.z * baseSlopeDir.y
+			));
+			
+			v1.norm = baseSurfaceNormal;
+			v2.norm = baseSurfaceNormal;
 			v1.uv = vec2(float(i) / segments, 0.0f);
 			v2.uv = vec2(float(i) / segments, 1.0f);
 
