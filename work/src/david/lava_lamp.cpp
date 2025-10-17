@@ -13,6 +13,7 @@
 #include "cgra/cgra_shader.hpp"
 #include <GLFW/glfw3.h>
 #include <glm/gtc/type_ptr.hpp>
+#include "matt/pbr.hpp"
 
 using namespace glm;
 
@@ -1059,47 +1060,61 @@ void LavaLamp::renderLavaLamp(const glm::mat4& view, const glm::mat4& proj, GLFW
 		glUniform3fv(glGetUniformLocation(m_lavaShader, "uBlobColors"), count, value_ptr(colors[0]));
 	}
 
-	// PASS 1: Depth-only pre-pass (metal + glass write depth)
+	// PASS 1: Metaball raymarching
 	glEnable(GL_DEPTH_TEST);
 	glDepthFunc(GL_LESS);
-	glDepthMask(GL_TRUE);
-	glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
-
-	// Render opaque metal (writes depth)
-	glUniform1i(glGetUniformLocation(m_lavaShader, "uRenderMode"), 2);
-	m_lampMetalMesh.draw();
-
-	// PASS 2: Metaball raymarching
 	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-	glDepthFunc(GL_LESS);
-	glDepthMask(GL_TRUE);
 
 	glUniform1i(glGetUniformLocation(m_lavaShader, "uRenderMode"), 1);
 	glUniform1i(glGetUniformLocation(m_lavaShader, "uIsFullscreenQuad"), 1);
 
-	// Bind depth texture from metal pre-pass
 	glActiveTexture(GL_TEXTURE0);
-	glBindTexture(GL_TEXTURE_2D, m_depthTextureFront);
-	glUniform1i(glGetUniformLocation(m_lavaShader, "uDepthTexture"), 0);
+	glBindTexture(GL_TEXTURE_2D, 0);
 
 	m_fullscreenQuadMesh.draw();
 	glUniform1i(glGetUniformLocation(m_lavaShader, "uIsFullscreenQuad"), 0);
 
-	// PASS 3: Metal color pass
-	glDepthFunc(GL_LEQUAL);
-	glDepthMask(GL_FALSE);
-
-	glUniform1i(glGetUniformLocation(m_lavaShader, "uRenderMode"), 2);
-	m_lampMetalMesh.draw();
-
-	// PASS 4: Glass color pass
+	// PASS 2: Glass
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 	glDepthMask(GL_FALSE);
-	glDepthFunc(GL_LEQUAL);
+	glDepthFunc(GL_LESS);
 
 	glUniform1i(glGetUniformLocation(m_lavaShader, "uRenderMode"), 0);
 	m_lampGlassMesh.draw();
+
+	// PASS 3: Metal with PBR
+	glDisable(GL_BLEND);
+	glDepthMask(GL_TRUE);
+	glDepthFunc(GL_LESS);
+
+	// Switch to PBR shader for metal parts
+	glUseProgram(m_pbr_shader);
+	glUniformMatrix4fv(glGetUniformLocation(m_pbr_shader, "projection"), 1, GL_FALSE, value_ptr(proj));
+	glUniformMatrix4fv(glGetUniformLocation(m_pbr_shader, "view"), 1, GL_FALSE, value_ptr(view));
+	glUniform3fv(glGetUniformLocation(m_pbr_shader, "camPos"), 1, value_ptr(cameraPos));
+
+	// Bind IBL data
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_CUBE_MAP, irradianceMap);
+	glActiveTexture(GL_TEXTURE1);
+	glBindTexture(GL_TEXTURE_CUBE_MAP, prefilterMap);
+	glActiveTexture(GL_TEXTURE2);
+	glBindTexture(GL_TEXTURE_2D, brdfLUTTexture);
+
+	// Bind gold PBR textures
+	bindPBRTextures(plastic);
+
+	// Set model matrix for lamp metal
+	mat4 metalModel = mat4(1.0f);
+	glUniformMatrix4fv(glGetUniformLocation(m_pbr_shader, "model"), 1, GL_FALSE, value_ptr(metalModel));
+	glUniformMatrix3fv(glGetUniformLocation(m_pbr_shader, "normalMatrix"), 1, GL_FALSE, value_ptr(glm::transpose(glm::inverse(glm::mat3(metalModel)))));
+
+	// Draw metal parts with PBR shader
+	m_lampMetalMesh.draw();
+
+	// Switch back to lava shader
+	glUseProgram(m_lavaShader);
 
 	// Restore state
 	glDepthMask(GL_TRUE);
