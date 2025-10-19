@@ -271,7 +271,7 @@ void Application::renderGUI() {
 
 
 	//USE FOR STATION UI
-	m_station.renderLSystemGUI();
+	m_station.renderGUI();
 	ImGui::End();
 }
 
@@ -321,10 +321,7 @@ void Application::keyCallback(int key, int scancode, int action, int mods) {
     case GLFW_KEY_D: m_moveRight = pressed; break;
     case GLFW_KEY_Q: m_moveDown = pressed; break;
     case GLFW_KEY_E: m_moveUp = pressed; break;
-	case GLFW_KEY_Z: if (pressed) m_station.setPreviewZoom(m_station.getPreviewZoom() * 1.1f); break;
-	case GLFW_KEY_X: if (pressed) m_station.setPreviewZoom(m_station.getPreviewZoom() / 1.1f); break;
-
-    default: break;
+	    default: break;
     }
 }
 

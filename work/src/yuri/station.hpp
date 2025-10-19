@@ -6,70 +6,75 @@
 #include <vector>
 #include <random>
 
+// Represents a single module/node in the space station
 struct LSystemNode {
     glm::vec2 position;
     float rotation;
     float length;
-    int moduleType; // 0=corridor, 1=habitat, 2=docking, 3=power, etc.
+    int moduleType; // 0=corridor, 1=habitat, 2=docking, 3=power
     int generation;
-    bool isActive;
 
-    LSystemNode() : position(0.0f), rotation(0.0f), length(1.0f), moduleType(0), generation(0), isActive(true) {}
+    LSystemNode()
+        : position(0.0f)
+        , rotation(0.0f)
+        , length(1.0f)
+        , moduleType(0)
+        , generation(0)
+    {
+    }
 };
 
+// Production rule for L-System
 struct LSystemRule {
     char symbol;
     std::vector<std::string> productions;
     float probability;
-    float lengthMultiplier;
-    float angleVariation;
+};
+
+// L-System generation parameters
+struct LSystemParams {
+    int iterations = 3;
+    float baseLength = 10.0f;
+    float baseAngle = 90.0f;
+    float lengthDecay = 0.8f;
+    float connectionProbability = 0.2f;
+    float minLength = 2.0f;
+    bool allowLoops = true;
+    int seed = 12345;
 };
 
 class Station {
 public:
-    // Existing cylinder mesh function
+    Station();
+
+    // Mesh generation
     cgra::gl_mesh createCylinderMesh(float radius, float height, int subdivisions, bool capped);
 
-    // L-System functions
+    // L-System generation
     void initializeLSystem();
-    void generateLSystem();
-    void interpretLSystem(const std::string& sequence);
-    void renderLSystemGUI();
-    void drawLSystemVisualization();
+    void regenerate();
 
-    // L-System parameters
-    struct LSystemParams {
-        int iterations = 3;
-        float baseLength = 10.0f;
-        float lengthVariation = 0.3f;
-        float baseAngle = 90.0f;
-        float angleVariation = 15.0f;
-        float branchProbability = 0.7f;
-        float connectionProbability = 0.2f;
-        float lengthDecay = 0.8f;
-        int maxConnections = 3;
-        float minLength = 2.0f;
-        bool allowLoops = true;
-        int seed = 12345;
-    } m_lsystemParams;
+    // GUI rendering
+    void renderGUI();
 
-    void setPreviewZoom(float zoom) { m_previewZoom = glm::clamp(zoom, 0.2f, 8.0f); }
-    float getPreviewZoom() const { return m_previewZoom; }
+    // Accessors
+    LSystemParams& getParams() { return m_params; }
+    const std::vector<LSystemNode>& getNodes() const { return m_nodes; }
+    const std::vector<std::pair<int, int>>& getConnections() const { return m_connections; }
 
 private:
+    // L-System data
+    LSystemParams m_params;
     std::vector<LSystemNode> m_nodes;
     std::vector<std::pair<int, int>> m_connections;
     std::vector<LSystemRule> m_rules;
     std::string m_currentSequence;
-    std::string m_axiom;
     std::mt19937 m_rng;
 
+    // Visualization
     float m_previewZoom = 1.0f;
-    // Returns true if position is too close to any existing node (overlap)
-    bool isOverlapping(const glm::vec2& pos, float minDist);
 
-
-    // Interpretation state
+    // Turtle state for interpretation
     struct TurtleState {
         glm::vec2 position;
         float angle;
@@ -78,11 +83,24 @@ private:
     };
     std::vector<TurtleState> m_stateStack;
 
+    // L-System generation
     void setupRules();
-    void addConnection(int from, int to);
-    bool canConnect(const glm::vec2& pos1, const glm::vec2& pos2);
-    int findNearestNode(const glm::vec2& position, float maxDistance);
+    void generateSequence();
     std::string applyRules(const std::string& current);
+    void interpretSequence(const std::string& sequence);
+
+    // Node management
+    void addConnection(int from, int to);
+    bool isOverlapping(const glm::vec2& pos, float minDist) const;
+    int findNearestNode(const glm::vec2& position, float maxDistance) const;
+
+    // Random utilities
     float getRandomFloat(float min, float max);
     int getRandomInt(int min, int max);
+
+    // GUI
+    void renderControlsGUI();
+    void renderPreviewGUI();
+    void drawVisualization();
+    void calculateBounds(glm::vec2& minBounds, glm::vec2& maxBounds) const;
 };
