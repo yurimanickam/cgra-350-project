@@ -324,7 +324,12 @@ int Station::getRandomInt(int min, int max) {
 }
 
 void Station::renderLSystemGUI() {
-    ImGui::Text("L-System Space Station Generator");
+    // Make all L-system controls in their own window, with a big preview canvas
+
+    // Parameters/controls window
+    ImGui::SetNextWindowPos(ImVec2(830, 5), ImGuiSetCond_Once);
+    ImGui::SetNextWindowSize(ImVec2(500, 360), ImGuiSetCond_Once);
+    ImGui::Begin("L-System Space Station Controls", 0);
 
     bool regenerate = false;
 
@@ -396,18 +401,25 @@ void Station::renderLSystemGUI() {
     ImGui::Text("Corridors: %d, Habitats: %d, Docking: %d, Power: %d",
         moduleCounts[0], moduleCounts[1], moduleCounts[2], moduleCounts[3]);
 
-    ImGui::Separator();
+    ImGui::End();
 
-    // 2D Visualization
+    // Large preview/visualization window
+    ImGui::SetNextWindowPos(ImVec2(830, 375), ImGuiSetCond_Once);
+    ImGui::SetNextWindowSize(ImVec2(700, 700), ImGuiSetCond_Once);
+    ImGui::Begin("L-System Station Layout Preview", 0);
     drawLSystemVisualization();
+    ImGui::End();
 }
 
 void Station::drawLSystemVisualization() {
-    ImGui::Text("Station Layout (2D View):");
-
+    // Draw as large as possible in the window
     ImVec2 canvas_pos = ImGui::GetCursorScreenPos();
-    ImVec2 canvas_size = ImGui::GetContentRegionAvail();
-    canvas_size.y = std::min(canvas_size.y, 300.0f); // Limit height
+    ImVec2 window_size = ImGui::GetWindowSize();
+    // Leave some room for borders/text, and ensure minimum size
+    ImVec2 canvas_size(
+        std::max(400.0f, window_size.x - 30.0f),
+        std::max(400.0f, window_size.y - 40.0f)
+    );
 
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
@@ -423,32 +435,56 @@ void Station::drawLSystemVisualization() {
     }
 
     // Add padding
-    glm::vec2 padding(10.0f);
+    glm::vec2 padding(25.0f, 25.0f);
     minBounds -= padding;
     maxBounds += padding;
 
     glm::vec2 worldSize = maxBounds - minBounds;
-    float scale = std::min(canvas_size.x / worldSize.x, canvas_size.y / worldSize.y) * 0.9f;
+
+    // Fit station to canvas, preserve aspect
+    float scale = (worldSize.x > 0.0f && worldSize.y > 0.0f)
+        ? std::min(canvas_size.x / worldSize.x, canvas_size.y / worldSize.y)
+        : 1.0f;
+
+    // Center station in canvas
+    glm::vec2 offset(
+        (canvas_size.x - (worldSize.x * scale)) * 0.5f,
+        (canvas_size.y - (worldSize.y * scale)) * 0.5f
+    );
+
+    // Draw white background for clarity
+    draw_list->AddRectFilled(
+        ImVec2(canvas_pos.x, canvas_pos.y),
+        ImVec2(canvas_pos.x + canvas_size.x, canvas_pos.y + canvas_size.y),
+        IM_COL32(32, 32, 32, 255)
+    );
 
     // Draw connections
     for (const auto& connection : m_connections) {
         const auto& node1 = m_nodes[connection.first];
         const auto& node2 = m_nodes[connection.second];
 
-        ImVec2 p1(canvas_pos.x + (node1.position.x - minBounds.x) * scale,
-            canvas_pos.y + (node1.position.y - minBounds.y) * scale);
-        ImVec2 p2(canvas_pos.x + (node2.position.x - minBounds.x) * scale,
-            canvas_pos.y + (node2.position.y - minBounds.y) * scale);
+        ImVec2 p1(
+            canvas_pos.x + offset.x + (node1.position.x - minBounds.x) * scale,
+            canvas_pos.y + offset.y + (node1.position.y - minBounds.y) * scale
+        );
+        ImVec2 p2(
+            canvas_pos.x + offset.x + (node2.position.x - minBounds.x) * scale,
+            canvas_pos.y + offset.y + (node2.position.y - minBounds.y) * scale
+        );
 
-        draw_list->AddLine(p1, p2, IM_COL32(100, 100, 100, 255), 2.0f);
+        draw_list->AddLine(p1, p2, IM_COL32(90, 90, 90, 255), 3.0f);
     }
 
-    // Draw nodes
+    // Draw nodes, use fixed size for clarity
+    float nodeRadius = 8.0f;
     for (size_t i = 0; i < m_nodes.size(); ++i) {
         const auto& node = m_nodes[i];
 
-        ImVec2 center(canvas_pos.x + (node.position.x - minBounds.x) * scale,
-            canvas_pos.y + (node.position.y - minBounds.y) * scale);
+        ImVec2 center(
+            canvas_pos.x + offset.x + (node.position.x - minBounds.x) * scale,
+            canvas_pos.y + offset.y + (node.position.y - minBounds.y) * scale
+        );
 
         // Color based on module type
         ImU32 color;
@@ -460,16 +496,17 @@ void Station::drawLSystemVisualization() {
         default: color = IM_COL32(255, 100, 100, 255); break; // Unknown - red
         }
 
-        float radius = 3.0f + node.length * 0.1f;
-        draw_list->AddCircleFilled(center, radius, color);
-        draw_list->AddCircle(center, radius, IM_COL32(0, 0, 0, 255), 12, 1.0f);
+        draw_list->AddCircleFilled(center, nodeRadius, color, 20);
+        draw_list->AddCircle(center, nodeRadius, IM_COL32(0, 0, 0, 255), 20, 2.0f);
 
         // Draw direction indicator
-        float dirX = std::cos(node.rotation) * radius * 0.7f;
-        float dirY = std::sin(node.rotation) * radius * 0.7f;
+        float dirLen = nodeRadius * 0.85f;
+        float dirX = std::cos(node.rotation) * dirLen;
+        float dirY = std::sin(node.rotation) * dirLen;
         ImVec2 dirEnd(center.x + dirX, center.y + dirY);
-        draw_list->AddLine(center, dirEnd, IM_COL32(0, 0, 0, 255), 1.5f);
+        draw_list->AddLine(center, dirEnd, IM_COL32(0, 0, 0, 255), 2.0f);
     }
 
+    // Reserve space in layout for the full canvas
     ImGui::Dummy(canvas_size);
 }
