@@ -175,8 +175,6 @@ void Application::render() {
 		// Use default shader for cylinder to avoid environment mapping
 		glUseProgram(m_default_shader);
 
-		// Enable back face culling so we can see inside faces when looking through gla
-
 		m_cylinderModel.draw(view, proj);
 
 		// Reset culling state
@@ -196,8 +194,6 @@ void Application::render() {
 	//m_model.draw(view, proj);
 
 	//if (m_drawCylinder) {
-
-
 	//	m_cylinderModel.draw(view, proj);
 	//}
 }
