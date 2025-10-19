@@ -3,8 +3,6 @@
 #include <cmath>
 #include <cgra/cgra_mesh.hpp>
 #include <glm/gtc/constants.hpp>
-#include <glm/gtc/matrix_transform.hpp>
-#include <glm/gtc/type_ptr.hpp>
 #include <imgui.h>
 
 using namespace glm;
@@ -27,11 +25,6 @@ namespace {
 
 Station::Station() {
     initializeLSystem();
-    initializeCylinderMesh();
-}
-
-void Station::initializeCylinderMesh() {
-    m_cylinderMesh = createCylinderMesh(m_moduleRadius, 1.0f, m_cylinderSubdivisions, true);
 }
 
 cgra::gl_mesh Station::createCylinderMesh(float radius, float height, int subdivisions, bool capped) {
@@ -100,53 +93,6 @@ cgra::gl_mesh Station::createCylinderMesh(float radius, float height, int subdiv
     return builder.build();
 }
 
-glm::vec3 Station::getModuleColor(int moduleType) const {
-    switch (moduleType) {
-    case 0: return glm::vec3(0.9f, 0.9f, 0.9f); // Corridor - light gray
-    case 1: return glm::vec3(0.4f, 0.8f, 0.4f); // Habitat - green
-    case 2: return glm::vec3(0.4f, 0.4f, 0.8f); // Docking - blue
-    case 3: return glm::vec3(0.8f, 0.8f, 0.4f); // Power - yellow
-    default: return glm::vec3(1.0f, 0.5f, 0.5f); // Error - red
-    }
-}
-
-void Station::render3D(const glm::mat4& view, const glm::mat4& proj, GLuint shader) {
-    if (!m_show3DModules || m_nodes.empty()) {
-        return;
-    }
-
-    glUseProgram(shader);
-    glUniformMatrix4fv(glGetUniformLocation(shader, "uProjectionMatrix"), 1, GL_FALSE, value_ptr(proj));
-
-    for (const auto& node : m_nodes) {
-        // Create transformation matrix for this module
-        mat4 modelTransform = mat4(1.0f);
-
-        // Position: convert 2D L-System position to 3D
-        // Y axis points up, so use node.position.y as the height
-        vec3 position3D(node.position.x, 0.0f, node.position.y);
-        modelTransform = translate(modelTransform, position3D);
-
-        // Rotation: L-System rotation is around Y axis (up)
-        modelTransform = rotate(modelTransform, node.rotation, vec3(0, 1, 0));
-
-        // Scale: length determines the cylinder height
-        // Cylinders are oriented along Y axis by default, so scale Y
-        modelTransform = scale(modelTransform, vec3(1.0f, node.length, 1.0f));
-
-        // Apply final transform
-        mat4 modelView = view * modelTransform;
-        glUniformMatrix4fv(glGetUniformLocation(shader, "uModelViewMatrix"), 1, GL_FALSE, value_ptr(modelView));
-
-        // Set color based on module type
-        vec3 color = getModuleColor(node.moduleType);
-        glUniform3fv(glGetUniformLocation(shader, "uColor"), 1, value_ptr(color));
-
-        // Draw the cylinder
-        m_cylinderMesh.draw();
-    }
-}
-
 void Station::initializeLSystem() {
     m_rng.seed(m_params.seed);
     setupRules();
@@ -203,7 +149,7 @@ void Station::generateSequence() {
 
 std::string Station::applyRules(const std::string& current) {
     std::string result;
-    result.reserve(current.size() * 2);
+    result.reserve(current.size() * 2); // Pre-allocate for efficiency
 
     for (char c : current) {
         bool ruleApplied = false;
@@ -223,7 +169,7 @@ std::string Station::applyRules(const std::string& current) {
         }
 
         if (!ruleApplied) {
-            result += c;
+            result += c; // Keep symbols without rules
         }
     }
 
@@ -261,10 +207,12 @@ void Station::interpretSequence(const std::string& sequence) {
                 const int newNodeIndex = m_nodes.size();
                 m_nodes.push_back(node);
 
+                // Connect to previous node
                 if (currentNodeIndex >= 0) {
                     addConnection(currentNodeIndex, newNodeIndex);
                 }
 
+                // Potential loop connections
                 if (m_params.allowLoops &&
                     getRandomFloat(0.0f, 1.0f) < m_params.connectionProbability) {
                     const int nearNode = findNearestNode(newPos, actualLength * 2.0f);
@@ -280,12 +228,12 @@ void Station::interpretSequence(const std::string& sequence) {
             break;
         }
         case '+':
-            state.angle += HALF_PI;
+            state.angle += HALF_PI; // Turn left 90 degrees
             if (state.angle >= TWO_PI) state.angle -= TWO_PI;
             break;
 
         case '-':
-            state.angle -= HALF_PI;
+            state.angle -= HALF_PI; // Turn right 90 degrees
             if (state.angle < 0.0f) state.angle += TWO_PI;
             break;
 
@@ -302,6 +250,7 @@ void Station::interpretSequence(const std::string& sequence) {
             break;
 
         default:
+            // Non-terminal symbols (X, L, R) are ignored
             break;
         }
     }
@@ -312,6 +261,7 @@ void Station::addConnection(int from, int to) {
         return;
     }
 
+    // Check if connection already exists
     for (const auto& conn : m_connections) {
         if ((conn.first == from && conn.second == to) ||
             (conn.first == to && conn.second == from)) {
@@ -363,7 +313,7 @@ void Station::renderGUI() {
 
 void Station::renderControlsGUI() {
     ImGui::SetNextWindowPos(ImVec2(830, 5), ImGuiSetCond_Once);
-    ImGui::SetNextWindowSize(ImVec2(450, 500), ImGuiSetCond_Once);
+    ImGui::SetNextWindowSize(ImVec2(450, 450), ImGuiSetCond_Once);
     ImGui::Begin("L-System Space Station");
 
     bool needsRegeneration = false;
@@ -399,16 +349,6 @@ void Station::renderControlsGUI() {
 
     ImGui::Spacing();
     ImGui::Separator();
-    ImGui::Text("3D Visualization");
-    ImGui::Separator();
-
-    ImGui::Checkbox("Show 3D Modules", &m_show3DModules);
-if (ImGui::SliderFloat("Module Radius", &m_moduleRadius, 0.5f, 5.0f)) {
-    initializeCylinderMesh();
-}
-
-    ImGui::Spacing();
-    ImGui::Separator();
     ImGui::Text("Statistics");
     ImGui::Separator();
 
@@ -416,6 +356,7 @@ if (ImGui::SliderFloat("Module Radius", &m_moduleRadius, 0.5f, 5.0f)) {
     ImGui::Text("Connections: %zu", m_connections.size());
     ImGui::Text("Sequence Length: %zu", m_currentSequence.length());
 
+    // Module type breakdown
     std::vector<int> moduleCounts(NUM_MODULE_TYPES, 0);
     for (const auto& node : m_nodes) {
         if (node.moduleType < NUM_MODULE_TYPES) {
@@ -478,26 +419,31 @@ void Station::drawVisualization() {
 
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
+    // Calculate bounds
     vec2 minBounds, maxBounds;
     calculateBounds(minBounds, maxBounds);
     const vec2 worldSize = maxBounds - minBounds;
 
+    // Calculate scale to fit station in canvas
     const float fitScale = (worldSize.x > 0.0f && worldSize.y > 0.0f)
         ? std::min(canvas_size.x / worldSize.x, canvas_size.y / worldSize.y)
         : 1.0f;
     const float scale = fitScale * m_previewZoom;
 
+    // Center the visualization
     const vec2 offset(
         (canvas_size.x - (worldSize.x * scale)) * 0.5f,
         (canvas_size.y - (worldSize.y * scale)) * 0.5f
     );
 
+    // Draw background
     draw_list->AddRectFilled(
         canvas_pos,
         ImVec2(canvas_pos.x + canvas_size.x, canvas_pos.y + canvas_size.y),
         IM_COL32(32, 32, 32, 255)
     );
 
+    // Lambda to convert world coordinates to screen coordinates
     auto worldToScreen = [&](const vec2& worldPos) -> ImVec2 {
         return ImVec2(
             canvas_pos.x + offset.x + (worldPos.x - minBounds.x) * scale,
@@ -505,16 +451,19 @@ void Station::drawVisualization() {
         );
         };
 
+    // Draw connections
     for (const auto& conn : m_connections) {
         const ImVec2 p1 = worldToScreen(m_nodes[conn.first].position);
         const ImVec2 p2 = worldToScreen(m_nodes[conn.second].position);
         draw_list->AddLine(p1, p2, IM_COL32(90, 90, 90, 255), 3.0f);
     }
 
+    // Draw nodes
     constexpr float NODE_RADIUS = 8.0f;
     for (const auto& node : m_nodes) {
         const ImVec2 center = worldToScreen(node.position);
 
+        // Get color based on module type
         const ImU32 color = (node.moduleType >= 0 && node.moduleType < NUM_MODULE_TYPES)
             ? MODULE_COLORS[node.moduleType]
             : IM_COL32(255, 100, 100, 255);
@@ -522,6 +471,7 @@ void Station::drawVisualization() {
         draw_list->AddCircleFilled(center, NODE_RADIUS, color);
         draw_list->AddCircle(center, NODE_RADIUS, IM_COL32(0, 0, 0, 255), 0, 2.0f);
 
+        // Draw direction indicator
         const float dirLen = NODE_RADIUS * 0.85f;
         const ImVec2 dirEnd(
             center.x + std::cos(node.rotation) * dirLen,
