@@ -780,6 +780,9 @@ void Station::drawVisualization() {
 
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
+    // --- Add this line to start clipping ---
+    draw_list->PushClipRect(canvas_pos, ImVec2(canvas_pos.x + canvas_size.x, canvas_pos.y + canvas_size.y), true);
+
     // Calculate bounds
     vec2 minBounds, maxBounds;
     calculateBounds(minBounds, maxBounds);
@@ -881,6 +884,9 @@ void Station::drawVisualization() {
             draw_list->AddLine(center, dirEnd, IM_COL32(0, 0, 0, 255), 2.5f);
         }
     }
+
+    // --- End of drawing: pop the clip rect ---
+    draw_list->PopClipRect();
 
     // Handle mouse interaction for panning
     ImGui::SetCursorScreenPos(canvas_pos);
