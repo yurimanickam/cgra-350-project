@@ -52,7 +52,7 @@ Application::Application(GLFWwindow* window) : m_window(window) {
 		CGRA_SRCDIR + std::string("//res//shaders//lava_fragment.glsl")
 	);
 
-	float cyl_radius = 40.0f;
+	float cyl_radius = 5.0f;
 	float cyl_height = 40.0f;
 	int cyl_subdiv = 48;
 	bool cyl_capped = true;
@@ -168,6 +168,23 @@ void Application::render() {
 	if (m_show_axis) drawAxis(view, proj);
 	glPolygonMode(GL_FRONT_AND_BACK, (m_showWireframe) ? GL_LINE : GL_FILL);
 
+
+
+	// Draw cylinder BEFORE lava lamp to ensure proper depth ordering
+	if (m_drawCylinder) {
+		// Use default shader for cylinder to avoid environment mapping
+		glUseProgram(m_default_shader);
+
+		// Enable back face culling so we can see inside faces when looking through gla
+
+		m_cylinderModel.draw(view, proj);
+
+		// Reset culling state
+		glCullFace(GL_BACK);
+		glDisable(GL_CULL_FACE);
+	}
+
+
 	// Render lava lamp
 	m_lavaLamp.renderLavaLamp(
 		view, proj, m_window,
@@ -178,11 +195,11 @@ void Application::render() {
 	// draw the original model (if desired)
 	//m_model.draw(view, proj);
 
-	if (m_drawCylinder) {
+	//if (m_drawCylinder) {
 
 
-		m_cylinderModel.draw(view, proj);
-	}
+	//	m_cylinderModel.draw(view, proj);
+	//}
 }
 
 void Application::renderGUI() {

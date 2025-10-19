@@ -1101,118 +1101,19 @@ void main() {
 		glassShader = builder.build();
 	}
 
-	glUseProgram(m_lavaShader);
-
 	// Set up matrices
 	mat4 model = mat4(1.0f);
 	mat4 modelView = view * model;
 	mat4 normalMatrix = transpose(inverse(model));
-	glUniformMatrix4fv(glGetUniformLocation(m_lavaShader, "uProjectionMatrix"), 1, GL_FALSE, value_ptr(proj));
-	glUniformMatrix4fv(glGetUniformLocation(m_lavaShader, "uModelViewMatrix"), 1, GL_FALSE, value_ptr(modelView));
-	glUniformMatrix4fv(glGetUniformLocation(m_lavaShader, "uModelMatrix"), 1, GL_FALSE, value_ptr(model));
-	glUniformMatrix4fv(glGetUniformLocation(m_lavaShader, "uNormalMatrix"), 1, GL_FALSE, value_ptr(normalMatrix));
-	glUniformMatrix4fv(glGetUniformLocation(m_lavaShader, "uViewMatrix"), 1, GL_FALSE, value_ptr(view));
-
-	// Pass inverse matrices for raymarching
-	mat4 invProj = inverse(proj);
-	mat4 invView = inverse(view);
-	glUniformMatrix4fv(glGetUniformLocation(m_lavaShader, "uInvProjectionMatrix"), 1, GL_FALSE, value_ptr(invProj));
-	glUniformMatrix4fv(glGetUniformLocation(m_lavaShader, "uInvViewMatrix"), 1, GL_FALSE, value_ptr(invView));
-
-	// Set time uniform
-	glUniform1f(glGetUniformLocation(m_lavaShader, "uTime"), static_cast<float>(glfwGetTime()));
-
-	// Set camera position (world-space)
 	vec3 cameraPos = vec3(inverse(view) * vec4(0, 0, 0, 1));
-	glUniform3fv(glGetUniformLocation(m_lavaShader, "uCameraPos"), 1, value_ptr(cameraPos));
-
-	// Pass framebuffer resolution
-	m_windowsize = vec2(width, height);
-	glUniform2fv(glGetUniformLocation(m_lavaShader, "uResolution"), 1, value_ptr(m_windowsize));
-
-	// Lamp parameters
-	glUniform1f(glGetUniformLocation(m_lavaShader, "uLampRadius"), getRadius());
-	glUniform1f(glGetUniformLocation(m_lavaShader, "uLampTopRadius"), 1.0f);
-	glUniform1f(glGetUniformLocation(m_lavaShader, "uLampHeight"), getHeight());
-	glUniform1f(glGetUniformLocation(m_lavaShader, "uThreshold"), threshold);
-
-	// Lighting
 	vec3 lightPos = vec3(5.0f, 15.0f, 5.0f);
-	vec3 lightColor = vec3(1.0f, 1.0f, 1.0f);
-	vec3 ambientColor = vec3(0.2f, 0.1f, 0.1f);
-	glUniform3fv(glGetUniformLocation(m_lavaShader, "uLightPos"), 1, value_ptr(lightPos));
-	glUniform3fv(glGetUniformLocation(m_lavaShader, "uLightColor"), 1, value_ptr(lightColor));
-	glUniform3fv(glGetUniformLocation(m_lavaShader, "uAmbientColor"), 1, value_ptr(ambientColor));
 
-	// Blob data
-	auto positions = getBlobPositions();
-	auto radii = getBlobRadii();
-	auto blobbiness = getBlobBlobbiness();
-	auto colors = getBlobColors();
-	int blobCount = getBlobCount();
-
-	glUniform1i(glGetUniformLocation(m_lavaShader, "uBlobCount"), blobCount);
-	if (blobCount > 0) {
-		int count = std::min(blobCount, 16);
-		glUniform4fv(glGetUniformLocation(m_lavaShader, "uBlobPositions"), count, value_ptr(positions[0]));
-		glUniform1fv(glGetUniformLocation(m_lavaShader, "uBlobRadii"), count, radii.data());
-		glUniform1fv(glGetUniformLocation(m_lavaShader, "uBlobBlobbiness"), count, blobbiness.data());
-		glUniform3fv(glGetUniformLocation(m_lavaShader, "uBlobColors"), count, value_ptr(colors[0]));
-	}
-
-	// Configure depth testing for robust glass rendering
+	// Configure depth testing for robust rendering
 	glEnable(GL_DEPTH_TEST);
 	glDepthFunc(GL_LESS);
 	glEnable(GL_CULL_FACE);
 
-	// PASS 1: Render glass container geometry (back faces first for proper transparency)
-	// Render back faces of glass first
-	glCullFace(GL_FRONT);
-	glEnable(GL_BLEND);
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	glDepthMask(GL_TRUE); // CHANGED: Allow depth writes for glass back faces
-
-	glUseProgram(glassShader);
-	glUniformMatrix4fv(glGetUniformLocation(glassShader, "uProjectionMatrix"), 1, GL_FALSE, value_ptr(proj));
-	glUniformMatrix4fv(glGetUniformLocation(glassShader, "uModelViewMatrix"), 1, GL_FALSE, value_ptr(modelView));
-	glUniformMatrix4fv(glGetUniformLocation(glassShader, "uModelMatrix"), 1, GL_FALSE, value_ptr(model));
-	glUniformMatrix4fv(glGetUniformLocation(glassShader, "uNormalMatrix"), 1, GL_FALSE, value_ptr(normalMatrix));
-	glUniform3fv(glGetUniformLocation(glassShader, "uCameraPos"), 1, value_ptr(cameraPos));
-	glUniform3fv(glGetUniformLocation(glassShader, "uLightPos"), 1, value_ptr(lightPos));
-	glUniform1f(glGetUniformLocation(glassShader, "uTime"), static_cast<float>(glfwGetTime()));
-
-	m_lampGlassMesh.draw();
-
-	// PASS 2: Render lava using the glass container as depth bounds
-	glUseProgram(m_lavaShader);
-	glCullFace(GL_BACK);
-	glDepthMask(GL_TRUE);
-	glDepthFunc(GL_LESS);
-
-	glUniform1i(glGetUniformLocation(m_lavaShader, "uRenderMode"), 1);
-	glUniform1i(glGetUniformLocation(m_lavaShader, "uIsFullscreenQuad"), 1);
-
-	// Render lava with glass bounds
-	m_fullscreenQuadMesh.draw();
-	glUniform1i(glGetUniformLocation(m_lavaShader, "uIsFullscreenQuad"), 0);
-
-	// PASS 3: Render front faces of glass with special depth handling
-	glUseProgram(glassShader);
-	glCullFace(GL_BACK);  // Now render front faces
-	glDepthMask(GL_FALSE); // Don't write depth for front faces
-	glDepthFunc(GL_LEQUAL); // CHANGED: Use LEQUAL to handle equal depths properly
-
-	glUniformMatrix4fv(glGetUniformLocation(glassShader, "uProjectionMatrix"), 1, GL_FALSE, value_ptr(proj));
-	glUniformMatrix4fv(glGetUniformLocation(glassShader, "uModelViewMatrix"), 1, GL_FALSE, value_ptr(modelView));
-	glUniformMatrix4fv(glGetUniformLocation(glassShader, "uModelMatrix"), 1, GL_FALSE, value_ptr(model));
-	glUniformMatrix4fv(glGetUniformLocation(glassShader, "uNormalMatrix"), 1, GL_FALSE, value_ptr(normalMatrix));
-	glUniform3fv(glGetUniformLocation(glassShader, "uCameraPos"), 1, value_ptr(cameraPos));
-	glUniform3fv(glGetUniformLocation(glassShader, "uLightPos"), 1, value_ptr(lightPos));
-	glUniform1f(glGetUniformLocation(glassShader, "uTime"), static_cast<float>(glfwGetTime()));
-
-	m_lampGlassMesh.draw();
-
-	// PASS 4: Metal with PBR
+	// PASS 1: Render metal parts FIRST (opaque, write depth)
 	glDisable(GL_BLEND);
 	glDepthMask(GL_TRUE);
 	glDepthFunc(GL_LESS);
@@ -1242,6 +1143,106 @@ void main() {
 
 	// Draw metal parts with PBR shader
 	m_lampMetalMesh.draw();
+
+	// PASS 2: Render glass container geometry (back faces first for proper transparency)
+	glEnable(GL_CULL_FACE);
+
+	// Render back faces of glass first
+	glCullFace(GL_FRONT);
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	glDepthMask(GL_FALSE); // Don't write depth for glass back faces
+
+	glUseProgram(glassShader);
+	glUniformMatrix4fv(glGetUniformLocation(glassShader, "uProjectionMatrix"), 1, GL_FALSE, value_ptr(proj));
+	glUniformMatrix4fv(glGetUniformLocation(glassShader, "uModelViewMatrix"), 1, GL_FALSE, value_ptr(modelView));
+	glUniformMatrix4fv(glGetUniformLocation(glassShader, "uModelMatrix"), 1, GL_FALSE, value_ptr(model));
+	glUniformMatrix4fv(glGetUniformLocation(glassShader, "uNormalMatrix"), 1, GL_FALSE, value_ptr(normalMatrix));
+	glUniform3fv(glGetUniformLocation(glassShader, "uCameraPos"), 1, value_ptr(cameraPos));
+	glUniform3fv(glGetUniformLocation(glassShader, "uLightPos"), 1, value_ptr(lightPos));
+	glUniform1f(glGetUniformLocation(glassShader, "uTime"), static_cast<float>(glfwGetTime()));
+
+	m_lampGlassMesh.draw();
+
+	// PASS 3: Render lava using the glass container as depth bounds
+	glUseProgram(m_lavaShader);
+
+	// Set up lava shader uniforms
+	glUniformMatrix4fv(glGetUniformLocation(m_lavaShader, "uProjectionMatrix"), 1, GL_FALSE, value_ptr(proj));
+	glUniformMatrix4fv(glGetUniformLocation(m_lavaShader, "uModelViewMatrix"), 1, GL_FALSE, value_ptr(modelView));
+	glUniformMatrix4fv(glGetUniformLocation(m_lavaShader, "uModelMatrix"), 1, GL_FALSE, value_ptr(model));
+	glUniformMatrix4fv(glGetUniformLocation(m_lavaShader, "uNormalMatrix"), 1, GL_FALSE, value_ptr(normalMatrix));
+	glUniformMatrix4fv(glGetUniformLocation(m_lavaShader, "uViewMatrix"), 1, GL_FALSE, value_ptr(view));
+
+	// Pass inverse matrices for raymarching
+	mat4 invProj = inverse(proj);
+	mat4 invView = inverse(view);
+	glUniformMatrix4fv(glGetUniformLocation(m_lavaShader, "uInvProjectionMatrix"), 1, GL_FALSE, value_ptr(invProj));
+	glUniformMatrix4fv(glGetUniformLocation(m_lavaShader, "uInvViewMatrix"), 1, GL_FALSE, value_ptr(invView));
+
+	// Set time uniform
+	glUniform1f(glGetUniformLocation(m_lavaShader, "uTime"), static_cast<float>(glfwGetTime()));
+	glUniform3fv(glGetUniformLocation(m_lavaShader, "uCameraPos"), 1, value_ptr(cameraPos));
+
+	// Pass framebuffer resolution
+	m_windowsize = vec2(width, height);
+	glUniform2fv(glGetUniformLocation(m_lavaShader, "uResolution"), 1, value_ptr(m_windowsize));
+
+	// Lamp parameters
+	glUniform1f(glGetUniformLocation(m_lavaShader, "uLampRadius"), getRadius());
+	glUniform1f(glGetUniformLocation(m_lavaShader, "uLampTopRadius"), 1.0f);
+	glUniform1f(glGetUniformLocation(m_lavaShader, "uLampHeight"), getHeight());
+	glUniform1f(glGetUniformLocation(m_lavaShader, "uThreshold"), threshold);
+
+	// Lighting
+	vec3 lightColor = vec3(1.0f, 1.0f, 1.0f);
+	vec3 ambientColor = vec3(0.2f, 0.1f, 0.1f);
+	glUniform3fv(glGetUniformLocation(m_lavaShader, "uLightPos"), 1, value_ptr(lightPos));
+	glUniform3fv(glGetUniformLocation(m_lavaShader, "uLightColor"), 1, value_ptr(lightColor));
+	glUniform3fv(glGetUniformLocation(m_lavaShader, "uAmbientColor"), 1, value_ptr(ambientColor));
+
+	// Blob data
+	auto positions = getBlobPositions();
+	auto radii = getBlobRadii();
+	auto blobbiness = getBlobBlobbiness();
+	auto colors = getBlobColors();
+	int blobCount = getBlobCount();
+
+	glUniform1i(glGetUniformLocation(m_lavaShader, "uBlobCount"), blobCount);
+	if (blobCount > 0) {
+		int count = std::min(blobCount, 16);
+		glUniform4fv(glGetUniformLocation(m_lavaShader, "uBlobPositions"), count, value_ptr(positions[0]));
+		glUniform1fv(glGetUniformLocation(m_lavaShader, "uBlobRadii"), count, radii.data());
+		glUniform1fv(glGetUniformLocation(m_lavaShader, "uBlobBlobbiness"), count, blobbiness.data());
+		glUniform3fv(glGetUniformLocation(m_lavaShader, "uBlobColors"), count, value_ptr(colors[0]));
+	}
+
+	glCullFace(GL_BACK);
+	glDepthMask(GL_TRUE);
+	glDepthFunc(GL_LESS);
+
+	glUniform1i(glGetUniformLocation(m_lavaShader, "uRenderMode"), 1);
+	glUniform1i(glGetUniformLocation(m_lavaShader, "uIsFullscreenQuad"), 1);
+
+	// Render lava with glass bounds
+	m_fullscreenQuadMesh.draw();
+	glUniform1i(glGetUniformLocation(m_lavaShader, "uIsFullscreenQuad"), 0);
+
+	// PASS 4: Render front faces of glass with special depth handling
+	glUseProgram(glassShader);
+	glCullFace(GL_BACK);  // Now render front faces
+	glDepthMask(GL_FALSE); // Don't write depth for front faces
+	glDepthFunc(GL_LEQUAL); // Use LEQUAL to handle equal depths properly
+
+	glUniformMatrix4fv(glGetUniformLocation(glassShader, "uProjectionMatrix"), 1, GL_FALSE, value_ptr(proj));
+	glUniformMatrix4fv(glGetUniformLocation(glassShader, "uModelViewMatrix"), 1, GL_FALSE, value_ptr(modelView));
+	glUniformMatrix4fv(glGetUniformLocation(glassShader, "uModelMatrix"), 1, GL_FALSE, value_ptr(model));
+	glUniformMatrix4fv(glGetUniformLocation(glassShader, "uNormalMatrix"), 1, GL_FALSE, value_ptr(normalMatrix));
+	glUniform3fv(glGetUniformLocation(glassShader, "uCameraPos"), 1, value_ptr(cameraPos));
+	glUniform3fv(glGetUniformLocation(glassShader, "uLightPos"), 1, value_ptr(lightPos));
+	glUniform1f(glGetUniformLocation(glassShader, "uTime"), static_cast<float>(glfwGetTime()));
+
+	m_lampGlassMesh.draw();
 
 	// Restore state
 	glDepthMask(depthMask);
