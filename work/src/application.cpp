@@ -65,6 +65,7 @@ Application::Application(GLFWwindow* window) : m_window(window) {
 	m_cylinderModel.color = glm::vec3(0.1f, 0.8f, 0.3f);
 	m_cylinderModel.modelTransform = glm::translate(glm::mat4(1.0f), glm::vec3(-8.0f, cyl_height / 2.0f, 0.0f));
 
+	m_station.initializeLSystem();
 
 
 }
@@ -268,6 +269,8 @@ void Application::renderGUI() {
 		loadPBRShaders(CGRA_SRCDIR + std::string("//res//textures//sunset.hdr"));
 	}
 
+
+	//USE FOR STATION UI
 	m_station.renderLSystemGUI();
 	ImGui::End();
 }
