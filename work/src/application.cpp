@@ -52,8 +52,8 @@ Application::Application(GLFWwindow* window) : m_window(window) {
 		CGRA_SRCDIR + std::string("//res//shaders//lava_fragment.glsl")
 	);
 
-	float cyl_radius = 2.0f;
-	float cyl_height = 6.0f;
+	float cyl_radius = 40.0f;
+	float cyl_height = 40.0f;
 	int cyl_subdiv = 48;
 	bool cyl_capped = true;
 	m_cylinderModel.shader = m_default_shader;
@@ -179,6 +179,8 @@ void Application::render() {
 	//m_model.draw(view, proj);
 
 	if (m_drawCylinder) {
+		// Ensure proper depth testing for cylinder
+
 		m_cylinderModel.draw(view, proj);
 	}
 }

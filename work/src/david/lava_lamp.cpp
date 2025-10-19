@@ -998,7 +998,6 @@ cgra::gl_mesh LavaLamp::createLampContainerMetal() {
 
 	return builder.build();
 }
-
 void LavaLamp::renderLavaLamp(const glm::mat4& view, const glm::mat4& proj, GLFWwindow* window,
 	bool animate, bool show, float threshold,
 	float heaterTemp, float gravity)
@@ -1011,6 +1010,9 @@ void LavaLamp::renderLavaLamp(const glm::mat4& view, const glm::mat4& proj, GLFW
 	GLint depthFunc;
 	glGetIntegerv(GL_DEPTH_FUNC, &depthFunc);
 	GLboolean blendEnabled = glIsEnabled(GL_BLEND);
+	GLint blendSrc, blendDst;
+	glGetIntegerv(GL_BLEND_SRC_ALPHA, &blendSrc);
+	glGetIntegerv(GL_BLEND_DST_ALPHA, &blendDst);
 
 	// retrieve the window size
 	int width, height;
@@ -1085,8 +1087,8 @@ void main() {
     
     vec3 color = glassColor * (0.2 + 0.3 * diffuse) + vec3(specular * 0.5);
     
-    // Glass transparency
-    float alpha = 0.15 + fresnel * 0.25;
+    // Glass transparency - make more opaque to ensure visibility
+    float alpha = 0.25 + fresnel * 0.35;
     
     FragColor = vec4(color, alpha);
 }
@@ -1158,16 +1160,17 @@ void main() {
 		glUniform3fv(glGetUniformLocation(m_lavaShader, "uBlobColors"), count, value_ptr(colors[0]));
 	}
 
-	// PASS 1: Render glass container geometry (back faces first for proper transparency)
+	// Configure depth testing for robust glass rendering
 	glEnable(GL_DEPTH_TEST);
 	glDepthFunc(GL_LESS);
 	glEnable(GL_CULL_FACE);
 
+	// PASS 1: Render glass container geometry (back faces first for proper transparency)
 	// Render back faces of glass first
 	glCullFace(GL_FRONT);
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	glDepthMask(GL_FALSE);
+	glDepthMask(GL_TRUE); // CHANGED: Allow depth writes for glass back faces
 
 	glUseProgram(glassShader);
 	glUniformMatrix4fv(glGetUniformLocation(glassShader, "uProjectionMatrix"), 1, GL_FALSE, value_ptr(proj));
@@ -1193,11 +1196,11 @@ void main() {
 	m_fullscreenQuadMesh.draw();
 	glUniform1i(glGetUniformLocation(m_lavaShader, "uIsFullscreenQuad"), 0);
 
-	// PASS 3: Render front faces of glass
+	// PASS 3: Render front faces of glass with special depth handling
 	glUseProgram(glassShader);
 	glCullFace(GL_BACK);  // Now render front faces
-	glDepthMask(GL_FALSE);
-	glDepthFunc(GL_LEQUAL);
+	glDepthMask(GL_FALSE); // Don't write depth for front faces
+	glDepthFunc(GL_LEQUAL); // CHANGED: Use LEQUAL to handle equal depths properly
 
 	glUniformMatrix4fv(glGetUniformLocation(glassShader, "uProjectionMatrix"), 1, GL_FALSE, value_ptr(proj));
 	glUniformMatrix4fv(glGetUniformLocation(glassShader, "uModelViewMatrix"), 1, GL_FALSE, value_ptr(modelView));
@@ -1247,10 +1250,12 @@ void main() {
 	if (!blendEnabled) {
 		glDisable(GL_BLEND);
 	}
+	else {
+		glBlendFunc(blendSrc, blendDst);
+	}
 
 	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, 0);
 	glBindTexture(GL_TEXTURE_CUBE_MAP, 0);
 	glUseProgram(0);
 }
-
