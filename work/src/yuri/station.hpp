@@ -1,70 +1,87 @@
-#pragma once
-
-#include "cgra/cgra_mesh.hpp"
-#include <glm/glm.hpp>
+#include "station.hpp"
 #include <vector>
-#include <string>
-#include <random>
+#include <cmath>
+#include <cgra/cgra_mesh.hpp>
+#include <glm/gtc/constants.hpp>
 
-struct Module {
-    glm::vec2 position;
-    glm::vec2 direction; // normalized direction vector
-    int length;
-    int id;
-    bool isRoot;
-    int parentId;
-};
+cgra::gl_mesh Station::createCylinderMesh(float radius, float height, int subdivisions, bool capped) {
+    using namespace glm;
+    using namespace cgra;
 
-struct Connection {
-    int moduleA;
-    int moduleB;
-    glm::vec2 connectionPoint;
-};
+    mesh_builder builder(GL_TRIANGLES);
 
-class Station {
-public:
-    // Original cylinder mesh creation
-    cgra::gl_mesh createCylinderMesh(float radius, float height, int subdivisions, bool capped = true);
+    float halfHeight = height / 2.0f;
+    float deltaTheta = 2.0f * glm::pi<float>() / float(subdivisions);
 
-    // L-System Space Station Generator
-    void generateLSystem();
-    void renderLSystemGUI();
-    void resetLSystem();
+    // Vertices for the sides
+    for (int i = 0; i <= subdivisions; ++i) {
+        float theta = i * deltaTheta;
+        float x = radius * std::cos(theta);
+        float z = radius * std::sin(theta);
 
-    // Getters for the generated system
-    const std::vector<Module>& getModules() const { return m_modules; }
-    const std::vector<Connection>& getConnections() const { return m_connections; }
-    const std::string& getLSystemString() const { return m_lSystemString; }
+        vec3 normal = glm::normalize(vec3(x, 0, z));
+        float u = float(i) / subdivisions;
 
-private:
-    // L-System parameters
-    int m_numRoots = 4;
-    int m_minBranchLength = 1;
-    int m_maxBranchLength = 3;
-    int m_minSpacing = 2;
-    int m_maxIterations = 5;
-    float m_branchProbability = 0.7f;
-    float m_connectionProbability = 0.3f;
-    int m_gridSize = 50;
+        // Bottom vertex
+        builder.vertices.push_back({ vec3(x, -halfHeight, z), normal, vec2(u, 0) });
+        // Top vertex
+        builder.vertices.push_back({ vec3(x, +halfHeight, z), normal, vec2(u, 1) });
+    }
 
-    // Generation state
-    std::vector<Module> m_modules;
-    std::vector<Connection> m_connections;
-    std::vector<std::vector<int>> m_occupancyGrid; // moduleId at each grid position, -1 = empty
-    std::string m_lSystemString;
-    std::mt19937 m_rng;
-    int m_nextModuleId = 0;
+    // Indices for the sides
+    for (int i = 0; i < subdivisions; ++i) {
+        int idx = i * 2;
+        // Each quad: 2 triangles
+        builder.indices.push_back(idx);
+        builder.indices.push_back(idx + 1);
+        builder.indices.push_back(idx + 2);
 
-    // Internal methods
-    void initializeRoots();
-    void growBranches();
-    void findConnections();
-    void updateLSystemString();
-    glm::vec2 gridToWorld(int x, int y) const;
-    glm::ivec2 worldToGrid(glm::vec2 pos) const;
-    bool isValidPosition(glm::ivec2 gridPos, int length, glm::vec2 direction) const;
-    bool hasMinimumSpacing(glm::ivec2 gridPos, glm::vec2 direction, int length) const;
-    void occupyGridCells(const Module& module);
-    std::vector<glm::vec2> getValidDirections() const;
-    void drawLSystemVisualization();
-};
+        builder.indices.push_back(idx + 1);
+        builder.indices.push_back(idx + 3);
+        builder.indices.push_back(idx + 2);
+    }
+
+    // Caps
+    if (capped) {
+        int baseIndex = int(builder.vertices.size());
+
+        // Bottom center
+        builder.vertices.push_back({ vec3(0, -halfHeight, 0), vec3(0, -1, 0), vec2(0.5f, 0.5f) });
+        int bottomCenterIdx = baseIndex;
+
+        // Bottom rim
+        for (int i = 0; i <= subdivisions; ++i) {
+            float theta = i * deltaTheta;
+            float x = radius * std::cos(theta);
+            float z = radius * std::sin(theta);
+            vec2 uv(0.5f + 0.5f * std::cos(theta), 0.5f + 0.5f * std::sin(theta));
+            builder.vertices.push_back({ vec3(x, -halfHeight, z), vec3(0, -1, 0), uv });
+        }
+        for (int i = 0; i < subdivisions; ++i) {
+            builder.indices.push_back(bottomCenterIdx);
+            builder.indices.push_back(bottomCenterIdx + i + 1);
+            builder.indices.push_back(bottomCenterIdx + i + 2);
+        }
+
+        baseIndex = int(builder.vertices.size());
+        // Top center
+        builder.vertices.push_back({ vec3(0, +halfHeight, 0), vec3(0, 1, 0), vec2(0.5f, 0.5f) });
+        int topCenterIdx = baseIndex;
+
+        // Top rim
+        for (int i = 0; i <= subdivisions; ++i) {
+            float theta = i * deltaTheta;
+            float x = radius * std::cos(theta);
+            float z = radius * std::sin(theta);
+            vec2 uv(0.5f + 0.5f * std::cos(theta), 0.5f + 0.5f * std::sin(theta));
+            builder.vertices.push_back({ vec3(x, +halfHeight, z), vec3(0, 1, 0), uv });
+        }
+        for (int i = 0; i < subdivisions; ++i) {
+            builder.indices.push_back(topCenterIdx);
+            builder.indices.push_back(topCenterIdx + i + 2);
+            builder.indices.push_back(topCenterIdx + i + 1);
+        }
+    }
+
+    return builder.build();
+}
