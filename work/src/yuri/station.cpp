@@ -24,6 +24,11 @@ namespace {
     };
 
     constexpr int NUM_MODULE_TYPES = 4;
+
+    // UI styling constants
+    const ImVec4 COLOR_HEADER = ImVec4(0.26f, 0.59f, 0.98f, 0.80f);
+    const ImVec4 COLOR_ACTIVE = ImVec4(0.26f, 0.59f, 0.98f, 1.00f);
+    const ImVec4 COLOR_HOVER = ImVec4(0.26f, 0.59f, 0.98f, 0.67f);
 }
 
 Station::Station() {
@@ -72,12 +77,8 @@ cgra::gl_mesh Station::createSphereMesh(float radius, int stacks, int slices) {
 }
 
 void Station::rebuildMeshes() {
-    // Create cylinder mesh (horizontal, along X-axis) with unit length
     m_cylinderMesh = createCylinderMesh(m_renderParams.tubeRadius, 1.0f, 16, false);
-
-    // Create sphere mesh for nodes
     m_nodeMesh = createSphereMesh(m_renderParams.nodeRadius, 16, 16);
-
     m_meshNeedsRebuild = false;
 }
 
@@ -88,7 +89,6 @@ cgra::gl_mesh Station::createCylinderMesh(float radius, float length, int subdiv
     const float halfLength = length / 2.0f;
     const float deltaTheta = TWO_PI / float(subdivisions);
 
-    // Generate side vertices (cylinder along the X axis)
     for (int i = 0; i <= subdivisions; ++i) {
         const float theta = i * deltaTheta;
         const float y = radius * std::cos(theta);
@@ -100,7 +100,6 @@ cgra::gl_mesh Station::createCylinderMesh(float radius, float length, int subdiv
         builder.vertices.push_back({ vec3(+halfLength, y, z), normal, vec2(u, 1) });
     }
 
-    // Generate side indices
     for (int i = 0; i < subdivisions; ++i) {
         const int idx = i * 2;
         builder.indices.push_back(idx);
@@ -112,7 +111,6 @@ cgra::gl_mesh Station::createCylinderMesh(float radius, float length, int subdiv
         builder.indices.push_back(idx + 2);
     }
 
-    // Generate caps if requested
     if (capped) {
         auto addCap = [&](float x, vec3 normal, bool reverseWinding) {
             const int centerIdx = builder.vertices.size();
@@ -156,30 +154,26 @@ void Station::initializeLSystem() {
 void Station::setupRules() {
     m_rules.clear();
 
-    // Main expansion rule - creates branching structure
     m_rules.push_back({
         'X',
         {
-            "F[+XL][-XR]FX",     // Standard branching
-            "F[++XL][--XR]X",    // Wider angle branches
-            "FF[+X]X",           // Simple forward with branch
-            "F[+XL]F[-XR]X",     // Alternating branches
-            "FFF[+X][-X]X"       // Long corridor with branches
+            "F[+XL][-XR]FX",
+            "F[++XL][--XR]X",
+            "FF[+X]X",
+            "F[+XL]F[-XR]X",
+            "FFF[+X][-X]X"
         },
         1.0f
         });
 
-    // Forward movement (terminal)
     m_rules.push_back({ 'F', { "F" }, 1.0f });
 
-    // Left module rule
     m_rules.push_back({
         'L',
         { "F", "FF", "F[+F]", "" },
         0.8f
         });
 
-    // Right module rule
     m_rules.push_back({
         'R',
         { "F", "FF", "F[-F]", "" },
@@ -194,7 +188,7 @@ void Station::regenerate() {
 }
 
 void Station::generateSequence() {
-    m_currentSequence = "X"; // Axiom
+    m_currentSequence = "X";
 
     for (int i = 0; i < m_params.iterations; ++i) {
         m_currentSequence = applyRules(m_currentSequence);
@@ -203,7 +197,7 @@ void Station::generateSequence() {
 
 std::string Station::applyRules(const std::string& current) {
     std::string result;
-    result.reserve(current.size() * 2); // Pre-allocate for efficiency
+    result.reserve(current.size() * 2);
 
     for (char c : current) {
         bool ruleApplied = false;
@@ -223,7 +217,7 @@ std::string Station::applyRules(const std::string& current) {
         }
 
         if (!ruleApplied) {
-            result += c; // Keep symbols without rules
+            result += c;
         }
     }
 
@@ -261,12 +255,10 @@ void Station::interpretSequence(const std::string& sequence) {
                 const int newNodeIndex = m_nodes.size();
                 m_nodes.push_back(node);
 
-                // Connect to previous node
                 if (currentNodeIndex >= 0) {
                     addConnection(currentNodeIndex, newNodeIndex);
                 }
 
-                // Potential loop connections
                 if (m_params.allowLoops &&
                     getRandomFloat(0.0f, 1.0f) < m_params.connectionProbability) {
                     const int nearNode = findNearestNode(newPos, actualLength * 2.0f);
@@ -282,12 +274,12 @@ void Station::interpretSequence(const std::string& sequence) {
             break;
         }
         case '+':
-            state.angle += HALF_PI; // Turn left 90 degrees
+            state.angle += HALF_PI;
             if (state.angle >= TWO_PI) state.angle -= TWO_PI;
             break;
 
         case '-':
-            state.angle -= HALF_PI; // Turn right 90 degrees
+            state.angle -= HALF_PI;
             if (state.angle < 0.0f) state.angle += TWO_PI;
             break;
 
@@ -304,7 +296,6 @@ void Station::interpretSequence(const std::string& sequence) {
             break;
 
         default:
-            // Non-terminal symbols (X, L, R) are ignored
             break;
         }
     }
@@ -315,7 +306,6 @@ void Station::addConnection(int from, int to) {
         return;
     }
 
-    // Check if connection already exists
     for (const auto& conn : m_connections) {
         if ((conn.first == from && conn.second == to) ||
             (conn.first == to && conn.second == from)) {
@@ -371,28 +361,21 @@ glm::vec3 Station::getModuleColor(int moduleType) const {
 }
 
 glm::mat4 Station::calculateConnectionTransform(const LSystemNode& from, const LSystemNode& to, float gapSize) const {
-    // Convert 2D positions to 3D (Y becomes the vertical axis)
     const vec3 fromPos3D(from.position.x, 0.0f, from.position.y);
     const vec3 toPos3D(to.position.x, 0.0f, to.position.y);
 
-    // Calculate direction and distance
     const vec3 direction = toPos3D - fromPos3D;
     const float fullDistance = length(direction);
 
-    // Account for gaps at both ends
     const float actualLength = std::max(0.1f, fullDistance - 2.0f * gapSize);
 
-    // Calculate center position (accounting for gaps)
     const vec3 normalizedDir = normalize(direction);
     const vec3 centerPos = fromPos3D + normalizedDir * (gapSize + actualLength * 0.5f);
 
-    // Calculate rotation to align cylinder with connection
-    // Default cylinder is along X-axis (1, 0, 0)
     const vec3 defaultDir(1.0f, 0.0f, 0.0f);
 
     mat4 transform = translate(mat4(1.0f), centerPos);
 
-    // Calculate rotation axis and angle
     const vec3 rotAxis = cross(defaultDir, normalizedDir);
     const float rotAxisLen = length(rotAxis);
 
@@ -401,11 +384,9 @@ glm::mat4 Station::calculateConnectionTransform(const LSystemNode& from, const L
         transform = rotate(transform, angle, normalize(rotAxis));
     }
     else if (dot(defaultDir, normalizedDir) < 0.0f) {
-        // 180 degree rotation needed
         transform = rotate(transform, PI, vec3(0.0f, 1.0f, 0.0f));
     }
 
-    // Scale to match connection length
     transform = scale(transform, vec3(actualLength, 1.0f, 1.0f));
 
     return transform;
@@ -416,7 +397,6 @@ void Station::render3DStation(const glm::mat4& view, const glm::mat4& proj, GLui
         return;
     }
 
-    // Rebuild meshes if parameters changed
     if (m_meshNeedsRebuild) {
         rebuildMeshes();
     }
@@ -426,7 +406,6 @@ void Station::render3DStation(const glm::mat4& view, const glm::mat4& proj, GLui
 
     const float gapSize = m_renderParams.nodeRadius * m_renderParams.gapMultiplier;
 
-    // Draw connections as cylinders
     for (const auto& conn : m_connections) {
         const LSystemNode& fromNode = m_nodes[conn.first];
         const LSystemNode& toNode = m_nodes[conn.second];
@@ -436,14 +415,12 @@ void Station::render3DStation(const glm::mat4& view, const glm::mat4& proj, GLui
 
         glUniformMatrix4fv(glGetUniformLocation(shader, "uModelViewMatrix"), 1, GL_FALSE, value_ptr(modelView));
 
-        // Use average color of connected nodes
         const vec3 color = (getModuleColor(fromNode.moduleType) + getModuleColor(toNode.moduleType)) * 0.5f;
         glUniform3fv(glGetUniformLocation(shader, "uColor"), 1, value_ptr(color));
 
         m_cylinderMesh.draw();
     }
 
-    // Draw nodes as spheres
     for (const auto& node : m_nodes) {
         const vec3 pos3D(node.position.x, 0.0f, node.position.y);
         const mat4 modelTransform = translate(mat4(1.0f), pos3D);
@@ -459,135 +436,324 @@ void Station::render3DStation(const glm::mat4& view, const glm::mat4& proj, GLui
 }
 
 void Station::renderGUI() {
-    renderControlsGUI();
-    renderPreviewGUI();
+    applyUIStyle();
+
+    ImGui::SetNextWindowPos(ImVec2(20, 20), ImGuiSetCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(900, 720), ImGuiSetCond_FirstUseEver);
+
+    ImGui::Begin("Space Station Generator", nullptr, ImGuiWindowFlags_NoCollapse);
+
+    // Create two columns: controls on left, preview on right
+    ImGui::BeginChild("LeftPane", ImVec2(420, 0), true);
+    renderControlsPanel();
+    ImGui::EndChild();
+
+    ImGui::SameLine();
+
+    ImGui::BeginChild("RightPane", ImVec2(0, 0), true);
+    renderPreviewPanel();
+    ImGui::EndChild();
+
+    ImGui::End();
 }
 
-void Station::renderControlsGUI() {
-    ImGui::SetNextWindowPos(ImVec2(830, 5), ImGuiSetCond_Once);
-    ImGui::SetNextWindowSize(ImVec2(450, 550), ImGuiSetCond_Once);
-    ImGui::Begin("L-System Space Station");
+void Station::applyUIStyle() {
+    ImGuiStyle& style = ImGui::GetStyle();
+    style.WindowRounding = 5.0f;
+    style.FrameRounding = 3.0f;
+    style.GrabRounding = 3.0f;
+    style.ScrollbarRounding = 3.0f;
+    style.FramePadding = ImVec2(5, 3);
+    style.ItemSpacing = ImVec2(8, 4);
+    style.ItemInnerSpacing = ImVec2(6, 4);
+    style.IndentSpacing = 20.0f;
+}
 
+void Station::renderControlsPanel() {
     bool needsRegeneration = false;
 
-    ImGui::Text("3D Rendering");
-    ImGui::Separator();
-    ImGui::Checkbox("Draw 3D Station", &m_drawStation);
-
+    // === HEADER ===
+    ImGui::PushStyleColor(ImGuiCol_Header, COLOR_HEADER);
     ImGui::Spacing();
-    ImGui::Text("3D Appearance Controls");
+    ImGui::Text("L-SYSTEM SPACE STATION GENERATOR");
+    ImGui::Separator();
+    ImGui::PopStyleColor();
+    ImGui::Spacing();
 
-    // Node radius slider
-    if (ImGui::SliderFloat("Node Radius", &m_renderParams.nodeRadius, 0.5f, 10.0f, "%.2f")) {
-        m_meshNeedsRebuild = true;
-    }
-    if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Size of the spherical nodes (junctions)");
+    // === GENERATION PARAMETERS ===
+    if (ImGui::CollapsingHeader("Generation Parameters", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::Spacing();
+
+        ImGui::Text("Complexity");
+        ImGui::PushItemWidth(-1);
+        needsRegeneration |= ImGui::SliderInt("##Iterations", &m_params.iterations, 1, 6);
+        ImGui::PopItemWidth();
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Number of L-System iterations (higher = more complex)");
+        }
+
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        ImGui::Text("Module Sizing");
+        ImGui::PushItemWidth(-1);
+        needsRegeneration |= ImGui::SliderFloat("##BaseLength", &m_params.baseLength, 5.0f, 30.0f, "Base: %.1f");
+        ImGui::PopItemWidth();
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Initial module length");
+        }
+
+        ImGui::PushItemWidth(-1);
+        needsRegeneration |= ImGui::SliderFloat("##LengthDecay", &m_params.lengthDecay, 0.5f, 1.0f, "Decay: %.2f");
+        ImGui::PopItemWidth();
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("How much modules shrink each generation");
+        }
+
+        ImGui::PushItemWidth(-1);
+        needsRegeneration |= ImGui::SliderFloat("##MinLength", &m_params.minLength, 1.0f, 10.0f, "Minimum: %.1f");
+        ImGui::PopItemWidth();
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Smallest allowed module size");
+        }
+
+        ImGui::Spacing();
     }
 
-    // Tube radius slider
-    if (ImGui::SliderFloat("Tube Radius", &m_renderParams.tubeRadius, 0.2f, 5.0f, "%.2f")) {
-        m_meshNeedsRebuild = true;
-    }
-    if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Thickness of the connecting cylinders");
+    // === TOPOLOGY ===
+    if (ImGui::CollapsingHeader("Topology & Connections", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::Spacing();
+
+        ImGui::Checkbox("Allow Loop Connections", &m_params.allowLoops);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Enable connections between nearby modules to create loops");
+        }
+
+        if (m_params.allowLoops) {
+            ImGui::Spacing();
+            ImGui::Text("Loop Probability");
+            ImGui::PushItemWidth(-1);
+            needsRegeneration |= ImGui::SliderFloat("##ConnProb", &m_params.connectionProbability, 0.0f, 0.5f, "%.2f");
+            ImGui::PopItemWidth();
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Chance of creating a loop connection");
+            }
+        }
+
+        ImGui::Spacing();
     }
 
-    // Gap multiplier slider
-    if (ImGui::SliderFloat("Gap Distance", &m_renderParams.gapMultiplier, 0.5f, 2.5f, "%.2f")) {
-        // No mesh rebuild needed, just affects positioning
-    }
-    if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Gap between tubes and nodes (multiplier of node radius)");
+    // === 3D RENDERING ===
+    if (ImGui::CollapsingHeader("3D Rendering", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::Spacing();
+
+        ImGui::Checkbox("Enable 3D View", &m_drawStation);
+
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        ImGui::Text("Geometry");
+        ImGui::PushItemWidth(-1);
+        if (ImGui::SliderFloat("##NodeRadius", &m_renderParams.nodeRadius, 0.5f, 10.0f, "Nodes: %.1f")) {
+            m_meshNeedsRebuild = true;
+        }
+        ImGui::PopItemWidth();
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Size of spherical junction nodes");
+        }
+
+        ImGui::PushItemWidth(-1);
+        if (ImGui::SliderFloat("##TubeRadius", &m_renderParams.tubeRadius, 0.2f, 5.0f, "Tubes: %.1f")) {
+            m_meshNeedsRebuild = true;
+        }
+        ImGui::PopItemWidth();
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Thickness of connecting tubes");
+        }
+
+        ImGui::PushItemWidth(-1);
+        ImGui::SliderFloat("##GapMult", &m_renderParams.gapMultiplier, 0.5f, 2.5f, "Gap: %.2fx");
+        ImGui::PopItemWidth();
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Space between tubes and nodes");
+        }
+
+        ImGui::Spacing();
+
+        if (ImGui::Button("Reset 3D Settings", ImVec2(-1, 0))) {
+            m_renderParams.nodeRadius = 3.0f;
+            m_renderParams.tubeRadius = 1.5f;
+            m_renderParams.gapMultiplier = 1.2f;
+            m_meshNeedsRebuild = true;
+        }
+
+        ImGui::Spacing();
     }
 
-    // Display actual gap distance
-    ImGui::Text("Actual Gap: %.2f units", m_renderParams.nodeRadius * m_renderParams.gapMultiplier);
+    // === RANDOM SEED ===
+    if (ImGui::CollapsingHeader("Random Seed", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::Spacing();
 
-    if (ImGui::Button("Reset 3D Appearance", ImVec2(-1, 0))) {
-        m_renderParams.nodeRadius = 3.0f;
-        m_renderParams.tubeRadius = 1.5f;
-        m_renderParams.gapMultiplier = 1.2f;
-        m_meshNeedsRebuild = true;
+        ImGui::PushItemWidth(-1);
+        needsRegeneration |= ImGui::SliderInt("##Seed", &m_params.seed, 1, 99999);
+        ImGui::PopItemWidth();
+
+        ImGui::Spacing();
+
+        if (ImGui::Button("New Random Seed", ImVec2(-1, 0))) {
+            m_params.seed = getRandomInt(1, 99999);
+            needsRegeneration = true;
+        }
+
+        ImGui::Spacing();
     }
 
+    // === GENERATE BUTTON ===
     ImGui::Spacing();
     ImGui::Separator();
-    ImGui::Text("Generation Parameters");
-    ImGui::Separator();
-
-    needsRegeneration |= ImGui::SliderInt("Iterations", &m_params.iterations, 1, 6);
-    needsRegeneration |= ImGui::SliderFloat("Base Length", &m_params.baseLength, 5.0f, 30.0f);
-    needsRegeneration |= ImGui::SliderFloat("Length Decay", &m_params.lengthDecay, 0.5f, 1.0f);
-    needsRegeneration |= ImGui::SliderFloat("Min Length", &m_params.minLength, 1.0f, 10.0f);
-
     ImGui::Spacing();
-    ImGui::Text("Connection Settings");
-    ImGui::Separator();
 
-    ImGui::Checkbox("Allow Loops", &m_params.allowLoops);
-    needsRegeneration |= ImGui::SliderFloat("Connection Probability", &m_params.connectionProbability, 0.0f, 0.5f);
-
-    ImGui::Spacing();
-    ImGui::Text("Random Seed");
-    ImGui::Separator();
-
-    needsRegeneration |= ImGui::SliderInt("Seed", &m_params.seed, 1, 99999);
-
-    if (ImGui::Button("Generate New Station", ImVec2(-1, 30))) {
+    ImGui::PushStyleColor(ImGuiCol_Button, COLOR_ACTIVE);
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, COLOR_HOVER);
+    if (ImGui::Button("GENERATE STATION", ImVec2(-1, 40))) {
         needsRegeneration = true;
+    }
+    ImGui::PopStyleColor(2);
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    // === STATISTICS ===
+    if (ImGui::CollapsingHeader("Statistics", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::Spacing();
+
+        ImGui::Columns(2, "stats", false);
+
+        ImGui::Text("Total Nodes:");
+        ImGui::NextColumn();
+        ImGui::Text("%zu", m_nodes.size());
+        ImGui::NextColumn();
+
+        ImGui::Text("Connections:");
+        ImGui::NextColumn();
+        ImGui::Text("%zu", m_connections.size());
+        ImGui::NextColumn();
+
+        ImGui::Text("Sequence Length:");
+        ImGui::NextColumn();
+        ImGui::Text("%zu", m_currentSequence.length());
+        ImGui::NextColumn();
+
+        ImGui::Columns(1);
+
+        ImGui::Spacing();
+        ImGui::Text("Module Breakdown");
+        ImGui::Separator();
+
+        std::vector<int> moduleCounts(NUM_MODULE_TYPES, 0);
+        for (const auto& node : m_nodes) {
+            if (node.moduleType < NUM_MODULE_TYPES) {
+                moduleCounts[node.moduleType]++;
+            }
+        }
+
+        const char* moduleNames[] = { "Corridors", "Habitats", "Docking", "Power" };
+        const ImU32 moduleColors[] = {
+            IM_COL32(200, 200, 200, 255),
+            IM_COL32(100, 255, 100, 255),
+            IM_COL32(100, 100, 255, 255),
+            IM_COL32(255, 255, 100, 255)
+        };
+
+        for (int i = 0; i < NUM_MODULE_TYPES; ++i) {
+            ImGui::BulletText("%s:", moduleNames[i]);
+            ImGui::SameLine(140);
+
+            int color = moduleColors[i];
+            float r = ((color >> 0) & 0xFF) / 255.0f;
+            float g = ((color >> 8) & 0xFF) / 255.0f;
+            float b = ((color >> 16) & 0xFF) / 255.0f;
+
+            ImGui::TextColored(ImVec4(r, g, b, 1.0f), "%d", moduleCounts[i]);
+        }
+
+        ImGui::Spacing();
     }
 
     if (needsRegeneration) {
         regenerate();
     }
-
-    ImGui::Spacing();
-    ImGui::Separator();
-    ImGui::Text("Statistics");
-    ImGui::Separator();
-
-    ImGui::Text("Nodes: %zu", m_nodes.size());
-    ImGui::Text("Connections: %zu", m_connections.size());
-    ImGui::Text("Sequence Length: %zu", m_currentSequence.length());
-
-    // Module type breakdown
-    std::vector<int> moduleCounts(NUM_MODULE_TYPES, 0);
-    for (const auto& node : m_nodes) {
-        if (node.moduleType < NUM_MODULE_TYPES) {
-            moduleCounts[node.moduleType]++;
-        }
-    }
-
-    ImGui::Text("Corridors: %d | Habitats: %d", moduleCounts[0], moduleCounts[1]);
-    ImGui::Text("Docking: %d | Power: %d", moduleCounts[2], moduleCounts[3]);
-
-    ImGui::End();
 }
 
-void Station::renderPreviewGUI() {
-    ImGui::SetNextWindowPos(ImVec2(1290, 5), ImGuiSetCond_Once);
-    ImGui::SetNextWindowSize(ImVec2(400, 450), ImGuiSetCond_Once);
-    ImGui::Begin("Station Layout Preview");
+void Station::renderPreviewPanel() {
+    ImGui::Spacing();
+    ImGui::Text("STATION LAYOUT PREVIEW");
+    ImGui::Separator();
+    ImGui::Spacing();
 
-    ImGui::Text("Zoom: %.2fx", m_previewZoom);
-
-    if (ImGui::Button("Zoom In")) {
-        m_previewZoom = glm::clamp(m_previewZoom * 1.2f, 0.2f, 8.0f);
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Zoom Out")) {
+    // Zoom controls
+    ImGui::Columns(3, "zoom", false);
+    if (ImGui::Button("[-] Zoom Out", ImVec2(-1, 0))) {
         m_previewZoom = glm::clamp(m_previewZoom / 1.2f, 0.2f, 8.0f);
     }
-    ImGui::SameLine();
-    if (ImGui::Button("Reset")) {
+    ImGui::NextColumn();
+
+    if (ImGui::Button("[=] Reset", ImVec2(-1, 0))) {
         m_previewZoom = 1.0f;
+        m_previewPan = vec2(0.0f);
     }
+    ImGui::NextColumn();
+
+    if (ImGui::Button("[+] Zoom In", ImVec2(-1, 0))) {
+        m_previewZoom = glm::clamp(m_previewZoom * 1.2f, 0.2f, 8.0f);
+    }
+    ImGui::NextColumn();
+    ImGui::Columns(1);
+
+    ImGui::Text("Zoom: %.1fx", m_previewZoom);
 
     ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    // Legend
+    ImGui::Text("Module Types:");
+    ImGui::Columns(2, "legend", false);
+
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+    const float legendSize = 12.0f;
+
+    const char* moduleNames[] = { "Corridor", "Habitat", "Docking", "Power" };
+    for (int i = 0; i < NUM_MODULE_TYPES; ++i) {
+        ImVec2 cursor = ImGui::GetCursorScreenPos();
+        draw_list->AddCircleFilled(
+            ImVec2(cursor.x + legendSize * 0.5f, cursor.y + legendSize * 0.5f),
+            legendSize * 0.5f,
+            MODULE_COLORS[i]
+        );
+        ImGui::Dummy(ImVec2(legendSize, legendSize));
+        ImGui::SameLine();
+        ImGui::Text("%s", moduleNames[i]);
+        ImGui::NextColumn();
+    }
+    ImGui::Columns(1);
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    // Main preview canvas
     drawVisualization();
 
-    ImGui::End();
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    ImGui::TextWrapped("Tip: Use the zoom controls to explore the station layout. "
+        "Colored circles represent different module types, and lines show connections.");
 }
 
 void Station::calculateBounds(vec2& minBounds, vec2& maxBounds) const {
@@ -606,10 +772,10 @@ void Station::calculateBounds(vec2& minBounds, vec2& maxBounds) const {
 
 void Station::drawVisualization() {
     const ImVec2 canvas_pos = ImGui::GetCursorScreenPos();
-    const ImVec2 window_size = ImGui::GetWindowSize();
+    const ImVec2 available = ImGui::GetContentRegionAvail();
     const ImVec2 canvas_size(
-        std::max(200.0f, window_size.x - 20.0f),
-        std::max(200.0f, window_size.y - 70.0f)
+        std::max(300.0f, available.x),
+        std::max(400.0f, available.y - 80.0f)
     );
 
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
@@ -619,26 +785,55 @@ void Station::drawVisualization() {
     calculateBounds(minBounds, maxBounds);
     const vec2 worldSize = maxBounds - minBounds;
 
-    // Calculate scale to fit station in canvas
+    // Calculate scale
     const float fitScale = (worldSize.x > 0.0f && worldSize.y > 0.0f)
-        ? std::min(canvas_size.x / worldSize.x, canvas_size.y / worldSize.y)
+        ? std::min(canvas_size.x / worldSize.x, canvas_size.y / worldSize.y) * 0.95f
         : 1.0f;
     const float scale = fitScale * m_previewZoom;
 
-    // Center the visualization
+    // Center with pan offset
     const vec2 offset(
-        (canvas_size.x - (worldSize.x * scale)) * 0.5f,
-        (canvas_size.y - (worldSize.y * scale)) * 0.5f
+        (canvas_size.x - (worldSize.x * scale)) * 0.5f + m_previewPan.x,
+        (canvas_size.y - (worldSize.y * scale)) * 0.5f + m_previewPan.y
     );
 
-    // Draw background
+    // Draw background with grid
     draw_list->AddRectFilled(
         canvas_pos,
         ImVec2(canvas_pos.x + canvas_size.x, canvas_pos.y + canvas_size.y),
-        IM_COL32(32, 32, 32, 255)
+        IM_COL32(20, 20, 25, 255)
     );
 
-    // Lambda to convert world coordinates to screen coordinates
+    // Draw border
+    draw_list->AddRect(
+        canvas_pos,
+        ImVec2(canvas_pos.x + canvas_size.x, canvas_pos.y + canvas_size.y),
+        IM_COL32(100, 100, 120, 255),
+        0.0f,
+        0,
+        2.0f
+    );
+
+    // Draw grid lines
+    const float gridSpacing = 50.0f * scale;
+    if (gridSpacing > 10.0f) {
+        for (float x = fmod(offset.x, gridSpacing); x < canvas_size.x; x += gridSpacing) {
+            draw_list->AddLine(
+                ImVec2(canvas_pos.x + x, canvas_pos.y),
+                ImVec2(canvas_pos.x + x, canvas_pos.y + canvas_size.y),
+                IM_COL32(40, 40, 45, 255)
+            );
+        }
+        for (float y = fmod(offset.y, gridSpacing); y < canvas_size.y; y += gridSpacing) {
+            draw_list->AddLine(
+                ImVec2(canvas_pos.x, canvas_pos.y + y),
+                ImVec2(canvas_pos.x + canvas_size.x, canvas_pos.y + y),
+                IM_COL32(40, 40, 45, 255)
+            );
+        }
+    }
+
+    // Lambda to convert world to screen
     auto worldToScreen = [&](const vec2& worldPos) -> ImVec2 {
         return ImVec2(
             canvas_pos.x + offset.x + (worldPos.x - minBounds.x) * scale,
@@ -646,34 +841,70 @@ void Station::drawVisualization() {
         );
         };
 
-    // Draw connections
+    // Draw connections with anti-aliasing
     for (const auto& conn : m_connections) {
         const ImVec2 p1 = worldToScreen(m_nodes[conn.first].position);
         const ImVec2 p2 = worldToScreen(m_nodes[conn.second].position);
-        draw_list->AddLine(p1, p2, IM_COL32(90, 90, 90, 255), 3.0f);
+        draw_list->AddLine(p1, p2, IM_COL32(80, 80, 90, 255), 3.0f);
     }
 
     // Draw nodes
-    constexpr float NODE_RADIUS = 8.0f;
+    const float baseNodeRadius = 10.0f;
+    const float nodeRadius = baseNodeRadius * glm::clamp(m_previewZoom, 0.5f, 2.0f);
+
     for (const auto& node : m_nodes) {
         const ImVec2 center = worldToScreen(node.position);
 
-        // Get color based on module type
         const ImU32 color = (node.moduleType >= 0 && node.moduleType < NUM_MODULE_TYPES)
             ? MODULE_COLORS[node.moduleType]
             : IM_COL32(255, 100, 100, 255);
 
-        draw_list->AddCircleFilled(center, NODE_RADIUS, color);
-        draw_list->AddCircle(center, NODE_RADIUS, IM_COL32(0, 0, 0, 255), 0, 2.0f);
+        // Draw shadow
+        draw_list->AddCircleFilled(
+            ImVec2(center.x + 1, center.y + 1),
+            nodeRadius,
+            IM_COL32(0, 0, 0, 80),
+            16
+        );
+
+        // Draw node
+        draw_list->AddCircleFilled(center, nodeRadius, color, 16);
+        draw_list->AddCircle(center, nodeRadius, IM_COL32(0, 0, 0, 200), 16, 2.0f);
 
         // Draw direction indicator
-        const float dirLen = NODE_RADIUS * 0.85f;
-        const ImVec2 dirEnd(
-            center.x + std::cos(node.rotation) * dirLen,
-            center.y + std::sin(node.rotation) * dirLen
-        );
-        draw_list->AddLine(center, dirEnd, IM_COL32(0, 0, 0, 255), 2.0f);
+        if (nodeRadius > 5.0f) {
+            const float dirLen = nodeRadius * 0.75f;
+            const ImVec2 dirEnd(
+                center.x + std::cos(node.rotation) * dirLen,
+                center.y + std::sin(node.rotation) * dirLen
+            );
+            draw_list->AddLine(center, dirEnd, IM_COL32(0, 0, 0, 255), 2.5f);
+        }
     }
 
-    ImGui::Dummy(canvas_size);
+    // Handle mouse interaction for panning
+    ImGui::SetCursorScreenPos(canvas_pos);
+    ImGui::InvisibleButton("canvas", canvas_size);
+
+    if (ImGui::IsItemActive() && ImGui::IsMouseDragging(0)) {
+        ImVec2 delta = ImGui::GetIO().MouseDelta;
+        m_previewPan.x += delta.x;
+        m_previewPan.y += delta.y;
+    }
+
+    // Mouse wheel zoom
+    if (ImGui::IsItemHovered()) {
+        float wheel = ImGui::GetIO().MouseWheel;
+        if (wheel != 0.0f) {
+            m_previewZoom = glm::clamp(m_previewZoom * (1.0f + wheel * 0.1f), 0.2f, 8.0f);
+        }
+    }
+}
+
+void Station::renderControlsGUI() {
+    // Legacy function - now handled by renderControlsPanel()
+}
+
+void Station::renderPreviewGUI() {
+    // Legacy function - now handled by renderPreviewPanel()
 }

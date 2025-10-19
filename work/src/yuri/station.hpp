@@ -6,7 +6,6 @@
 #include <vector>
 #include <random>
 
-// Represents a single module/node in the space station
 struct LSystemNode {
     glm::vec2 position;
     float rotation;
@@ -24,14 +23,12 @@ struct LSystemNode {
     }
 };
 
-// Production rule for L-System
 struct LSystemRule {
     char symbol;
     std::vector<std::string> productions;
     float probability;
 };
 
-// L-System generation parameters
 struct LSystemParams {
     int iterations = 3;
     float baseLength = 10.0f;
@@ -43,11 +40,10 @@ struct LSystemParams {
     int seed = 12345;
 };
 
-// 3D rendering parameters
 struct Rendering3DParams {
     float nodeRadius = 3.0f;
     float tubeRadius = 1.5f;
-    float gapMultiplier = 1.2f; // Multiplier for node radius to determine gap
+    float gapMultiplier = 1.2f;
 };
 
 class Station {
@@ -86,6 +82,7 @@ private:
 
     // Visualization
     float m_previewZoom = 1.0f;
+    glm::vec2 m_previewPan = glm::vec2(0.0f);
     bool m_drawStation = true;
 
     // 3D rendering
@@ -94,7 +91,7 @@ private:
     cgra::gl_mesh m_nodeMesh;
     bool m_meshNeedsRebuild = true;
 
-    // Turtle state for interpretation
+    // Turtle state
     struct TurtleState {
         glm::vec2 position;
         float angle;
@@ -119,8 +116,11 @@ private:
     int getRandomInt(int min, int max);
 
     // GUI
-    void renderControlsGUI();
-    void renderPreviewGUI();
+    void applyUIStyle();
+    void renderControlsPanel();
+    void renderPreviewPanel();
+    void renderControlsGUI(); // Legacy
+    void renderPreviewGUI(); // Legacy
     void drawVisualization();
     void calculateBounds(glm::vec2& minBounds, glm::vec2& maxBounds) const;
 
