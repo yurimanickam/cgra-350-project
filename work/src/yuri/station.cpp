@@ -118,44 +118,31 @@ void Station::render3D(const glm::mat4& view, const glm::mat4& proj, GLuint shad
     glUseProgram(shader);
     glUniformMatrix4fv(glGetUniformLocation(shader, "uProjectionMatrix"), 1, GL_FALSE, value_ptr(proj));
 
-    for (size_t i = 0; i < m_nodes.size(); ++i) {
-        const auto& node = m_nodes[i];
+    for (const auto& node : m_nodes) {
+        // Create transformation matrix for this module
+        mat4 modelTransform = mat4(1.0f);
 
-        // Skip the first node since it doesn't have a "parent"
-        int parentIdx = -1;
-        for (const auto& conn : m_connections) {
-            // Find a connection where node is the "to" and from < to (so we only do forward direction)
-            if (conn.second == i && conn.first < i) {
-                parentIdx = conn.first;
-                break;
-            }
-        }
-        if (parentIdx < 0) continue; // skip nodes with no parent connection
+        // Position: convert 2D L-System position to 3D
+        // Y axis points up, so use node.position.y as the height
+        vec3 position3D(node.position.x, 0.0f, node.position.y);
+        modelTransform = translate(modelTransform, position3D);
 
-        const auto& parent = m_nodes[parentIdx];
+        // Rotation: L-System rotation is around Y axis (up)
+        modelTransform = rotate(modelTransform, node.rotation, vec3(0, 1, 0));
 
-        glm::vec3 start(parent.position.x, 0.0f, parent.position.y);
-        glm::vec3 end(node.position.x, 0.0f, node.position.y);
-        glm::vec3 dir = glm::normalize(end - start);
-        float length = glm::length(end - start);
+        // Scale: length determines the cylinder height
+        // Cylinders are oriented along Y axis by default, so scale Y
+        modelTransform = scale(modelTransform, vec3(1.0f, node.length, 1.0f));
 
-        // Compute the rotation axis and angle to align Y to dir
-        glm::vec3 up(0, 1, 0);
-        glm::vec3 axis = glm::cross(up, dir);
-        float angle = acos(glm::clamp(glm::dot(up, dir), -1.0f, 1.0f));
-        if (glm::length(axis) < 0.0001f) axis = glm::vec3(1, 0, 0); // avoid NaN
+        // Apply final transform
+        mat4 modelView = view * modelTransform;
+        glUniformMatrix4fv(glGetUniformLocation(shader, "uModelViewMatrix"), 1, GL_FALSE, value_ptr(modelView));
 
-        // Model matrix: move to midpoint, rotate, scale to length
-        glm::vec3 mid = (start + end) * 0.5f;
-        glm::mat4 model = glm::mat4(1.0f);
-        model = glm::translate(model, mid);
-        model = glm::rotate(model, angle, axis); // align cylinder Y with direction
-        model = glm::scale(model, glm::vec3(m_moduleRadius, length * 0.5f, m_moduleRadius)); // scale Y to half-length, radius XZ
+        // Set color based on module type
+        vec3 color = getModuleColor(node.moduleType);
+        glUniform3fv(glGetUniformLocation(shader, "uColor"), 1, value_ptr(color));
 
-        glm::mat4 modelview = view * model;
-        glUniformMatrix4fv(glGetUniformLocation(shader, "uModelViewMatrix"), 1, GL_FALSE, glm::value_ptr(modelview));
-        glm::vec3 color = getModuleColor(node.moduleType);
-        glUniform3fv(glGetUniformLocation(shader, "uColor"), 1, glm::value_ptr(color));
+        // Draw the cylinder
         m_cylinderMesh.draw();
     }
 }
@@ -416,9 +403,9 @@ void Station::renderControlsGUI() {
     ImGui::Separator();
 
     ImGui::Checkbox("Show 3D Modules", &m_show3DModules);
-    if (ImGui::SliderFloat("Module Radius", &m_moduleRadius, 0.5f, 5.0f)) {
-        initializeCylinderMesh();
-    }
+if (ImGui::SliderFloat("Module Radius", &m_moduleRadius, 0.5f, 5.0f)) {
+    initializeCylinderMesh();
+}
 
     ImGui::Spacing();
     ImGui::Separator();
