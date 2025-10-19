@@ -849,7 +849,7 @@ void Station::drawVisualization() {
     }
 
     // Draw nodes
-    const float baseNodeRadius = 10.0f;
+    const float baseNodeRadius = 5.0f;
     const float nodeRadius = baseNodeRadius * glm::clamp(m_previewZoom, 0.5f, 2.0f);
 
     for (const auto& node : m_nodes) {

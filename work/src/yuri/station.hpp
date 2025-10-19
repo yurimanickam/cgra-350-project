@@ -37,7 +37,7 @@ struct LSystemParams {
     float connectionProbability = 0.2f;
     float minLength = 2.0f;
     bool allowLoops = true;
-    int seed = 12345;
+    int seed = 1701;
 };
 
 struct Rendering3DParams {
