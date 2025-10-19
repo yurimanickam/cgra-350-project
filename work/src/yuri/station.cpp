@@ -17,13 +17,16 @@ namespace {
 
     // Module type colors for visualization
     const ImU32 MODULE_COLORS[] = {
-        IM_COL32(255, 255, 255, 255), // Corridor - white
+        IM_COL32(200, 200, 200, 255), // Corridor - light gray
         IM_COL32(100, 255, 100, 255), // Habitat - green
-        IM_COL32(100, 100, 255, 255), // Docking - blue
-        IM_COL32(255, 255, 100, 255)  // Power - yellow
+        IM_COL32(100, 150, 255, 255), // Docking - blue
+        IM_COL32(255, 220, 100, 255)  // Power - yellow
     };
 
     constexpr int NUM_MODULE_TYPES = 4;
+
+    // Junction color
+    const ImU32 JUNCTION_COLOR = IM_COL32(150, 150, 160, 255);
 
     // UI styling constants
     const ImVec4 COLOR_HEADER = ImVec4(0.26f, 0.59f, 0.98f, 0.80f);
@@ -77,8 +80,8 @@ cgra::gl_mesh Station::createSphereMesh(float radius, int stacks, int slices) {
 }
 
 void Station::rebuildMeshes() {
-    m_cylinderMesh = createCylinderMesh(m_renderParams.tubeRadius, 1.0f, 16, false);
-    m_nodeMesh = createSphereMesh(m_renderParams.nodeRadius, 16, 16);
+    m_moduleMesh = createCylinderMesh(m_renderParams.moduleRadius, 1.0f, 16, false);
+    m_junctionMesh = createSphereMesh(m_renderParams.junctionRadius, 16, 16);
     m_meshNeedsRebuild = false;
 }
 
@@ -225,8 +228,8 @@ std::string Station::applyRules(const std::string& current) {
 }
 
 void Station::interpretSequence(const std::string& sequence) {
-    m_nodes.clear();
-    m_connections.clear();
+    m_modules.clear();
+    m_junctions.clear();
     m_stateStack.clear();
 
     TurtleState state;
@@ -235,7 +238,8 @@ void Station::interpretSequence(const std::string& sequence) {
     state.length = m_params.baseLength;
     state.generation = 0;
 
-    int currentNodeIndex = -1;
+    // Add starting junction
+    addJunction(state.position, state.generation);
 
     for (char command : sequence) {
         switch (command) {
@@ -244,32 +248,22 @@ void Station::interpretSequence(const std::string& sequence) {
             const vec2 direction(std::cos(state.angle), std::sin(state.angle));
             const vec2 newPos = state.position + direction * actualLength;
 
-            if (!isOverlapping(newPos, m_params.minLength)) {
-                LSystemNode node;
-                node.position = newPos;
-                node.rotation = state.angle;
-                node.length = actualLength;
-                node.generation = state.generation;
-                node.moduleType = getRandomInt(0, NUM_MODULE_TYPES - 1);
+            if (!isOverlapping(newPos, m_params.minLength * 0.5f)) {
+                // Create a module (the tube segment)
+                const int moduleType = getRandomInt(0, NUM_MODULE_TYPES - 1);
+                addModule(state.position, newPos, state.angle, actualLength, moduleType, state.generation);
 
-                const int newNodeIndex = m_nodes.size();
-                m_nodes.push_back(node);
+                // Add junction at the end of the module
+                addJunction(newPos, state.generation);
 
-                if (currentNodeIndex >= 0) {
-                    addConnection(currentNodeIndex, newNodeIndex);
-                }
-
+                // Possibly create loop connections
                 if (m_params.allowLoops &&
                     getRandomFloat(0.0f, 1.0f) < m_params.connectionProbability) {
-                    const int nearNode = findNearestNode(newPos, actualLength * 2.0f);
-                    if (nearNode >= 0 && nearNode != newNodeIndex && nearNode != currentNodeIndex) {
-                        addConnection(newNodeIndex, nearNode);
-                    }
+                    connectNearbyJunctions(newPos, state.generation);
                 }
 
                 state.position = newPos;
                 state.length *= m_params.lengthDecay;
-                currentNodeIndex = newNodeIndex;
             }
             break;
         }
@@ -291,7 +285,6 @@ void Station::interpretSequence(const std::string& sequence) {
             if (!m_stateStack.empty()) {
                 state = m_stateStack.back();
                 m_stateStack.pop_back();
-                currentNodeIndex = findNearestNode(state.position, 0.1f);
             }
             break;
 
@@ -301,37 +294,62 @@ void Station::interpretSequence(const std::string& sequence) {
     }
 }
 
-void Station::addConnection(int from, int to) {
-    if (from < 0 || to < 0 || from >= m_nodes.size() || to >= m_nodes.size()) {
-        return;
-    }
+void Station::addModule(const glm::vec2& startPos, const glm::vec2& endPos, float rotation, float length, int moduleType, int generation) {
+    StationModule module;
+    module.startPos = startPos;
+    module.endPos = endPos;
+    module.rotation = rotation;
+    module.length = length;
+    module.moduleType = moduleType;
+    module.generation = generation;
+    m_modules.push_back(module);
+}
 
-    for (const auto& conn : m_connections) {
-        if ((conn.first == from && conn.second == to) ||
-            (conn.first == to && conn.second == from)) {
-            return;
+void Station::addJunction(const glm::vec2& position, int generation) {
+    // Check if junction already exists at this position
+    for (const auto& junction : m_junctions) {
+        if (length(junction.position - position) < 0.1f) {
+            return; // Junction already exists here
         }
     }
 
-    m_connections.push_back({ from, to });
+    ModuleJunction junction;
+    junction.position = position;
+    junction.generation = generation;
+    m_junctions.push_back(junction);
+}
+
+void Station::connectNearbyJunctions(const glm::vec2& newJunctionPos, int generation) {
+    const int nearJunction = findNearestJunction(newJunctionPos, m_params.baseLength * 2.0f);
+    if (nearJunction >= 0) {
+        const glm::vec2& targetPos = m_junctions[nearJunction].position;
+        if (length(targetPos - newJunctionPos) > 0.5f) { // Avoid self-connections
+            // Create a connecting module
+            const vec2 dir = targetPos - newJunctionPos;
+            const float len = length(dir);
+            const float angle = std::atan2(dir.y, dir.x);
+            const int moduleType = 0; // Corridor for loop connections
+            addModule(newJunctionPos, targetPos, angle, len, moduleType, generation);
+        }
+    }
 }
 
 bool Station::isOverlapping(const vec2& pos, float minDist) const {
-    for (const auto& node : m_nodes) {
-        if (length(node.position - pos) < minDist) {
+    for (const auto& junction : m_junctions) {
+        if (length(junction.position - pos) < minDist) {
             return true;
         }
     }
     return false;
 }
 
-int Station::findNearestNode(const vec2& position, float maxDistance) const {
+int Station::findNearestJunction(const glm::vec2& position, float maxDistance) const {
     int nearest = -1;
     float minDist = maxDistance;
 
-    for (size_t i = 0; i < m_nodes.size(); ++i) {
-        const float dist = length(m_nodes[i].position - position);
-        if (dist < minDist) {
+    for (size_t i = 0; i < m_junctions.size(); ++i) {
+        const float dist = length(m_junctions[i].position - position);
+        if (dist < minDist && dist > 0.1f) { // Avoid finding the same junction
             minDist = dist;
             nearest = static_cast<int>(i);
         }
@@ -352,17 +370,17 @@ int Station::getRandomInt(int min, int max) {
 
 glm::vec3 Station::getModuleColor(int moduleType) const {
     switch (moduleType) {
-    case 0: return glm::vec3(0.9f, 0.9f, 0.9f); // Corridor - white
+    case 0: return glm::vec3(0.8f, 0.8f, 0.8f); // Corridor - light gray
     case 1: return glm::vec3(0.4f, 0.9f, 0.4f); // Habitat - green
-    case 2: return glm::vec3(0.4f, 0.4f, 0.9f); // Docking - blue
-    case 3: return glm::vec3(0.9f, 0.9f, 0.4f); // Power - yellow
+    case 2: return glm::vec3(0.4f, 0.6f, 0.9f); // Docking - blue
+    case 3: return glm::vec3(0.9f, 0.86f, 0.4f); // Power - yellow
     default: return glm::vec3(0.7f, 0.7f, 0.7f);
     }
 }
 
-glm::mat4 Station::calculateConnectionTransform(const LSystemNode& from, const LSystemNode& to, float gapSize) const {
-    const vec3 fromPos3D(from.position.x, 0.0f, from.position.y);
-    const vec3 toPos3D(to.position.x, 0.0f, to.position.y);
+glm::mat4 Station::calculateModuleTransform(const StationModule& module, float gapSize) const {
+    const vec3 fromPos3D(module.startPos.x, 0.0f, module.startPos.y);
+    const vec3 toPos3D(module.endPos.x, 0.0f, module.endPos.y);
 
     const vec3 direction = toPos3D - fromPos3D;
     const float fullDistance = length(direction);
@@ -393,7 +411,7 @@ glm::mat4 Station::calculateConnectionTransform(const LSystemNode& from, const L
 }
 
 void Station::render3DStation(const glm::mat4& view, const glm::mat4& proj, GLuint shader) {
-    if (!m_drawStation || m_nodes.empty()) {
+    if (!m_drawStation || m_modules.empty()) {
         return;
     }
 
@@ -404,34 +422,32 @@ void Station::render3DStation(const glm::mat4& view, const glm::mat4& proj, GLui
     glUseProgram(shader);
     glUniformMatrix4fv(glGetUniformLocation(shader, "uProjectionMatrix"), 1, GL_FALSE, value_ptr(proj));
 
-    const float gapSize = m_renderParams.nodeRadius * m_renderParams.gapMultiplier;
+    const float gapSize = m_renderParams.junctionRadius * m_renderParams.gapMultiplier;
 
-    for (const auto& conn : m_connections) {
-        const LSystemNode& fromNode = m_nodes[conn.first];
-        const LSystemNode& toNode = m_nodes[conn.second];
-
-        const mat4 modelTransform = calculateConnectionTransform(fromNode, toNode, gapSize);
+    // Render all modules (the tubes - these are the functional parts)
+    for (const auto& module : m_modules) {
+        const mat4 modelTransform = calculateModuleTransform(module, gapSize);
         const mat4 modelView = view * modelTransform;
 
         glUniformMatrix4fv(glGetUniformLocation(shader, "uModelViewMatrix"), 1, GL_FALSE, value_ptr(modelView));
 
-        const vec3 color = (getModuleColor(fromNode.moduleType) + getModuleColor(toNode.moduleType)) * 0.5f;
+        const vec3 color = getModuleColor(module.moduleType);
         glUniform3fv(glGetUniformLocation(shader, "uColor"), 1, value_ptr(color));
 
-        m_cylinderMesh.draw();
+        m_moduleMesh.draw();
     }
 
-    for (const auto& node : m_nodes) {
-        const vec3 pos3D(node.position.x, 0.0f, node.position.y);
+    // Render all junctions (the connection points - spheres)
+    const vec3 junctionColor(0.6f, 0.6f, 0.65f);
+    for (const auto& junction : m_junctions) {
+        const vec3 pos3D(junction.position.x, 0.0f, junction.position.y);
         const mat4 modelTransform = translate(mat4(1.0f), pos3D);
         const mat4 modelView = view * modelTransform;
 
         glUniformMatrix4fv(glGetUniformLocation(shader, "uModelViewMatrix"), 1, GL_FALSE, value_ptr(modelView));
+        glUniform3fv(glGetUniformLocation(shader, "uColor"), 1, value_ptr(junctionColor));
 
-        const vec3 color = getModuleColor(node.moduleType);
-        glUniform3fv(glGetUniformLocation(shader, "uColor"), 1, value_ptr(color));
-
-        m_nodeMesh.draw();
+        m_junctionMesh.draw();
     }
 }
 
@@ -489,7 +505,7 @@ void Station::renderControlsPanel() {
         needsRegeneration |= ImGui::SliderInt("##Iterations", &m_params.iterations, 1, 6);
         ImGui::PopItemWidth();
         if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Number of L-System iterations (higher = more complex)");
+            ImGui::SetTooltip("Number of L-System iterations (higher = more complex station)");
         }
 
         ImGui::Spacing();
@@ -527,7 +543,7 @@ void Station::renderControlsPanel() {
 
         ImGui::Checkbox("Allow Loop Connections", &m_params.allowLoops);
         if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Enable connections between nearby modules to create loops");
+            ImGui::SetTooltip("Enable additional connecting modules between nearby junctions to create loops");
         }
 
         if (m_params.allowLoops) {
@@ -537,7 +553,7 @@ void Station::renderControlsPanel() {
             needsRegeneration |= ImGui::SliderFloat("##ConnProb", &m_params.connectionProbability, 0.0f, 0.5f, "%.2f");
             ImGui::PopItemWidth();
             if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("Chance of creating a loop connection");
+                ImGui::SetTooltip("Chance of creating an additional connecting module");
             }
         }
 
@@ -556,35 +572,35 @@ void Station::renderControlsPanel() {
 
         ImGui::Text("Geometry");
         ImGui::PushItemWidth(-1);
-        if (ImGui::SliderFloat("##NodeRadius", &m_renderParams.nodeRadius, 0.5f, 10.0f, "Nodes: %.1f")) {
+        if (ImGui::SliderFloat("##JunctionRadius", &m_renderParams.junctionRadius, 0.5f, 10.0f, "Junctions: %.1f")) {
             m_meshNeedsRebuild = true;
         }
         ImGui::PopItemWidth();
         if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Size of spherical junction nodes");
+            ImGui::SetTooltip("Size of spherical junction connectors");
         }
 
         ImGui::PushItemWidth(-1);
-        if (ImGui::SliderFloat("##TubeRadius", &m_renderParams.tubeRadius, 0.2f, 5.0f, "Tubes: %.1f")) {
+        if (ImGui::SliderFloat("##ModuleRadius", &m_renderParams.moduleRadius, 0.2f, 5.0f, "Modules: %.1f")) {
             m_meshNeedsRebuild = true;
         }
         ImGui::PopItemWidth();
         if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Thickness of connecting tubes");
+            ImGui::SetTooltip("Thickness/radius of module tubes");
         }
 
         ImGui::PushItemWidth(-1);
-        ImGui::SliderFloat("##GapMult", &m_renderParams.gapMultiplier, 0.5f, 2.5f, "Gap: %.2fx");
+        ImGui::SliderFloat("##GapMult", &m_renderParams.gapMultiplier, 0.0f, 2.5f, "Gap: %.2fx");
         ImGui::PopItemWidth();
         if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Space between tubes and nodes");
+            ImGui::SetTooltip("Space between modules and junctions");
         }
 
         ImGui::Spacing();
 
         if (ImGui::Button("Reset 3D Settings", ImVec2(-1, 0))) {
-            m_renderParams.nodeRadius = 1.0f;
-            m_renderParams.tubeRadius = 1.5f;
+            m_renderParams.junctionRadius = 1.0f;
+            m_renderParams.moduleRadius = 1.5f;
             m_renderParams.gapMultiplier = 0.0f;
             m_meshNeedsRebuild = true;
         }
@@ -632,14 +648,14 @@ void Station::renderControlsPanel() {
 
         ImGui::Columns(2, "stats", false);
 
-        ImGui::Text("Total Nodes:");
+        ImGui::Text("Total Modules:");
         ImGui::NextColumn();
-        ImGui::Text("%zu", m_nodes.size());
+        ImGui::Text("%zu", m_modules.size());
         ImGui::NextColumn();
 
-        ImGui::Text("Connections:");
+        ImGui::Text("Junctions:");
         ImGui::NextColumn();
-        ImGui::Text("%zu", m_connections.size());
+        ImGui::Text("%zu", m_junctions.size());
         ImGui::NextColumn();
 
         ImGui::Text("Sequence Length:");
@@ -650,27 +666,27 @@ void Station::renderControlsPanel() {
         ImGui::Columns(1);
 
         ImGui::Spacing();
-        ImGui::Text("Module Breakdown");
+        ImGui::Text("Module Type Breakdown");
         ImGui::Separator();
 
         std::vector<int> moduleCounts(NUM_MODULE_TYPES, 0);
-        for (const auto& node : m_nodes) {
-            if (node.moduleType < NUM_MODULE_TYPES) {
-                moduleCounts[node.moduleType]++;
+        for (const auto& module : m_modules) {
+            if (module.moduleType < NUM_MODULE_TYPES) {
+                moduleCounts[module.moduleType]++;
             }
         }
 
-        const char* moduleNames[] = { "Corridors", "Habitats", "Docking", "Power" };
+        const char* moduleNames[] = { "Corridors", "Habitats", "Docking Bays", "Power Modules" };
         const ImU32 moduleColors[] = {
             IM_COL32(200, 200, 200, 255),
             IM_COL32(100, 255, 100, 255),
-            IM_COL32(100, 100, 255, 255),
-            IM_COL32(255, 255, 100, 255)
+            IM_COL32(100, 150, 255, 255),
+            IM_COL32(255, 220, 100, 255)
         };
 
         for (int i = 0; i < NUM_MODULE_TYPES; ++i) {
             ImGui::BulletText("%s:", moduleNames[i]);
-            ImGui::SameLine(140);
+            ImGui::SameLine(160);
 
             int color = moduleColors[i];
             float r = ((color >> 0) & 0xFF) / 255.0f;
@@ -720,25 +736,44 @@ void Station::renderPreviewPanel() {
     ImGui::Spacing();
 
     // Legend
-    ImGui::Text("Module Types:");
+    ImGui::Text("Legend:");
     ImGui::Columns(2, "legend", false);
 
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
-    const float legendSize = 12.0f;
+    const float legendLineLength = 20.0f;
+    const float legendLineThickness = 4.0f;
+    const float legendCircleSize = 6.0f;
 
-    const char* moduleNames[] = { "Corridor", "Habitat", "Docking", "Power" };
+    const char* moduleNames[] = { "Corridor", "Habitat", "Docking Bay", "Power" };
     for (int i = 0; i < NUM_MODULE_TYPES; ++i) {
         ImVec2 cursor = ImGui::GetCursorScreenPos();
-        draw_list->AddCircleFilled(
-            ImVec2(cursor.x + legendSize * 0.5f, cursor.y + legendSize * 0.5f),
-            legendSize * 0.5f,
-            MODULE_COLORS[i]
+
+        // Draw module as a line segment
+        draw_list->AddLine(
+            ImVec2(cursor.x, cursor.y + legendCircleSize),
+            ImVec2(cursor.x + legendLineLength, cursor.y + legendCircleSize),
+            MODULE_COLORS[i],
+            legendLineThickness
         );
-        ImGui::Dummy(ImVec2(legendSize, legendSize));
+
+        ImGui::Dummy(ImVec2(legendLineLength, legendCircleSize * 2));
         ImGui::SameLine();
-        ImGui::Text("%s", moduleNames[i]);
+        ImGui::Text("%s Module", moduleNames[i]);
         ImGui::NextColumn();
     }
+
+    // Add junction to legend
+    ImVec2 cursor = ImGui::GetCursorScreenPos();
+    draw_list->AddCircleFilled(
+        ImVec2(cursor.x + legendCircleSize, cursor.y + legendCircleSize),
+        legendCircleSize,
+        JUNCTION_COLOR
+    );
+    ImGui::Dummy(ImVec2(legendCircleSize * 2, legendCircleSize * 2));
+    ImGui::SameLine();
+    ImGui::Text("Junction");
+    ImGui::NextColumn();
+
     ImGui::Columns(1);
 
     ImGui::Spacing();
@@ -753,16 +788,16 @@ void Station::renderPreviewPanel() {
     ImGui::Spacing();
 
     ImGui::TextWrapped("Tip: Use the zoom controls to explore the station layout. "
-        "Colored circles represent different module types, and lines show connections.");
+        "Colored lines represent functional modules (tubes), and gray circles show junction connectors.");
 }
 
 void Station::calculateBounds(vec2& minBounds, vec2& maxBounds) const {
     minBounds = vec2(FLT_MAX);
     maxBounds = vec2(-FLT_MAX);
 
-    for (const auto& node : m_nodes) {
-        minBounds = glm::min(minBounds, node.position);
-        maxBounds = glm::max(maxBounds, node.position);
+    for (const auto& junction : m_junctions) {
+        minBounds = glm::min(minBounds, junction.position);
+        maxBounds = glm::max(maxBounds, junction.position);
     }
 
     const vec2 padding(25.0f);
@@ -780,7 +815,7 @@ void Station::drawVisualization() {
 
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
-    // --- Add this line to start clipping ---
+    // Start clipping
     draw_list->PushClipRect(canvas_pos, ImVec2(canvas_pos.x + canvas_size.x, canvas_pos.y + canvas_size.y), true);
 
     // Calculate bounds
@@ -844,48 +879,49 @@ void Station::drawVisualization() {
         );
         };
 
-    // Draw connections with anti-aliasing
-    for (const auto& conn : m_connections) {
-        const ImVec2 p1 = worldToScreen(m_nodes[conn.first].position);
-        const ImVec2 p2 = worldToScreen(m_nodes[conn.second].position);
-        draw_list->AddLine(p1, p2, IM_COL32(80, 80, 90, 255), 3.0f);
+    // Draw modules (these are the main tubes - the functional parts)
+    const float moduleLineThickness = 6.0f * glm::clamp(m_previewZoom, 0.5f, 2.0f);
+
+    for (const auto& module : m_modules) {
+        const ImVec2 p1 = worldToScreen(module.startPos);
+        const ImVec2 p2 = worldToScreen(module.endPos);
+
+        const ImU32 color = (module.moduleType >= 0 && module.moduleType < NUM_MODULE_TYPES)
+            ? MODULE_COLORS[module.moduleType]
+            : IM_COL32(200, 100, 100, 255);
+
+        // Draw shadow
+        draw_list->AddLine(
+            ImVec2(p1.x + 1, p1.y + 1),
+            ImVec2(p2.x + 1, p2.y + 1),
+            IM_COL32(0, 0, 0, 80),
+            moduleLineThickness
+        );
+
+        // Draw module
+        draw_list->AddLine(p1, p2, color, moduleLineThickness);
     }
 
-    // Draw nodes
-    const float baseNodeRadius = 5.0f;
-    const float nodeRadius = baseNodeRadius * glm::clamp(m_previewZoom, 0.5f, 2.0f);
+    // Draw junctions (connection points - small circles)
+    const float junctionRadius = 4.0f * glm::clamp(m_previewZoom, 0.5f, 2.0f);
 
-    for (const auto& node : m_nodes) {
-        const ImVec2 center = worldToScreen(node.position);
-
-        const ImU32 color = (node.moduleType >= 0 && node.moduleType < NUM_MODULE_TYPES)
-            ? MODULE_COLORS[node.moduleType]
-            : IM_COL32(255, 100, 100, 255);
+    for (const auto& junction : m_junctions) {
+        const ImVec2 center = worldToScreen(junction.position);
 
         // Draw shadow
         draw_list->AddCircleFilled(
             ImVec2(center.x + 1, center.y + 1),
-            nodeRadius,
+            junctionRadius,
             IM_COL32(0, 0, 0, 80),
-            16
+            12
         );
 
-        // Draw node
-        draw_list->AddCircleFilled(center, nodeRadius, color, 16);
-        draw_list->AddCircle(center, nodeRadius, IM_COL32(0, 0, 0, 200), 16, 2.0f);
-
-        // Draw direction indicator
-        if (nodeRadius > 5.0f) {
-            const float dirLen = nodeRadius * 0.75f;
-            const ImVec2 dirEnd(
-                center.x + std::cos(node.rotation) * dirLen,
-                center.y + std::sin(node.rotation) * dirLen
-            );
-            draw_list->AddLine(center, dirEnd, IM_COL32(0, 0, 0, 255), 2.5f);
-        }
+        // Draw junction
+        draw_list->AddCircleFilled(center, junctionRadius, JUNCTION_COLOR, 12);
+        draw_list->AddCircle(center, junctionRadius, IM_COL32(80, 80, 90, 255), 12, 1.5f);
     }
 
-    // --- End of drawing: pop the clip rect ---
+    // End clipping
     draw_list->PopClipRect();
 
     // Handle mouse interaction for panning
@@ -905,12 +941,4 @@ void Station::drawVisualization() {
             m_previewZoom = glm::clamp(m_previewZoom * (1.0f + wheel * 0.1f), 0.2f, 8.0f);
         }
     }
-}
-
-void Station::renderControlsGUI() {
-    // Legacy function - now handled by renderControlsPanel()
-}
-
-void Station::renderPreviewGUI() {
-    // Legacy function - now handled by renderPreviewPanel()
 }

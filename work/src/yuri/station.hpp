@@ -6,18 +6,33 @@
 #include <vector>
 #include <random>
 
-struct LSystemNode {
-    glm::vec2 position;
-    float rotation;
-    float length;
-    int moduleType; // 0=corridor, 1=habitat, 2=docking, 3=power
-    int generation;
+// A Module is a functional segment of the station (rendered as a tube/cylinder)
+struct StationModule {
+    glm::vec2 startPos;      // Start position in 2D layout
+    glm::vec2 endPos;        // End position in 2D layout
+    float rotation;          // Direction angle
+    float length;            // Length of the module
+    int moduleType;          // 0=corridor, 1=habitat, 2=docking, 3=power
+    int generation;          // L-System generation level
 
-    LSystemNode()
-        : position(0.0f)
+    StationModule()
+        : startPos(0.0f)
+        , endPos(0.0f)
         , rotation(0.0f)
         , length(1.0f)
         , moduleType(0)
+        , generation(0)
+    {
+    }
+};
+
+// A Junction is a connection point between modules (rendered as a sphere)
+struct ModuleJunction {
+    glm::vec2 position;
+    int generation;
+
+    ModuleJunction()
+        : position(0.0f)
         , generation(0)
     {
     }
@@ -41,9 +56,9 @@ struct LSystemParams {
 };
 
 struct Rendering3DParams {
-    float nodeRadius = 1.0f;
-    float tubeRadius = 1.5f;
-    float gapMultiplier = 0.0f;
+    float junctionRadius = 1.0f;    // Size of junction spheres
+    float moduleRadius = 1.5f;       // Radius/thickness of module tubes
+    float gapMultiplier = 0.0f;      // Gap between modules and junctions
 };
 
 class Station {
@@ -67,15 +82,15 @@ public:
     // Accessors
     LSystemParams& getParams() { return m_params; }
     Rendering3DParams& getRenderParams() { return m_renderParams; }
-    const std::vector<LSystemNode>& getNodes() const { return m_nodes; }
-    const std::vector<std::pair<int, int>>& getConnections() const { return m_connections; }
+    const std::vector<StationModule>& getModules() const { return m_modules; }
+    const std::vector<ModuleJunction>& getJunctions() const { return m_junctions; }
     bool shouldDrawStation() const { return m_drawStation; }
 
 private:
     // L-System data
     LSystemParams m_params;
-    std::vector<LSystemNode> m_nodes;
-    std::vector<std::pair<int, int>> m_connections;
+    std::vector<StationModule> m_modules;        // The functional modules (tubes)
+    std::vector<ModuleJunction> m_junctions;     // Connection points (spheres)
     std::vector<LSystemRule> m_rules;
     std::string m_currentSequence;
     std::mt19937 m_rng;
@@ -87,8 +102,8 @@ private:
 
     // 3D rendering
     Rendering3DParams m_renderParams;
-    cgra::gl_mesh m_cylinderMesh;
-    cgra::gl_mesh m_nodeMesh;
+    cgra::gl_mesh m_moduleMesh;      // Cylinder mesh for modules
+    cgra::gl_mesh m_junctionMesh;    // Sphere mesh for junctions
     bool m_meshNeedsRebuild = true;
 
     // Turtle state
@@ -106,10 +121,12 @@ private:
     std::string applyRules(const std::string& current);
     void interpretSequence(const std::string& sequence);
 
-    // Node management
-    void addConnection(int from, int to);
+    // Module management
+    void addModule(const glm::vec2& startPos, const glm::vec2& endPos, float rotation, float length, int moduleType, int generation);
+    void addJunction(const glm::vec2& position, int generation);
+    void connectNearbyJunctions(const glm::vec2& newJunctionPos, int generation);
     bool isOverlapping(const glm::vec2& pos, float minDist) const;
-    int findNearestNode(const glm::vec2& position, float maxDistance) const;
+    int findNearestJunction(const glm::vec2& position, float maxDistance) const;
 
     // Random utilities
     float getRandomFloat(float min, float max);
@@ -119,13 +136,11 @@ private:
     void applyUIStyle();
     void renderControlsPanel();
     void renderPreviewPanel();
-    void renderControlsGUI(); // Legacy
-    void renderPreviewGUI(); // Legacy
     void drawVisualization();
     void calculateBounds(glm::vec2& minBounds, glm::vec2& maxBounds) const;
 
     // 3D rendering helpers
     void rebuildMeshes();
-    glm::mat4 calculateConnectionTransform(const LSystemNode& from, const LSystemNode& to, float gapSize) const;
+    glm::mat4 calculateModuleTransform(const StationModule& module, float gapSize) const;
     glm::vec3 getModuleColor(int moduleType) const;
 };
