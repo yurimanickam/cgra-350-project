@@ -1,3 +1,4 @@
+
 #include "station.hpp"
 #include <algorithm>
 #include <cmath>
@@ -27,6 +28,7 @@ namespace {
 
     // Junction color
     const ImU32 JUNCTION_COLOR = IM_COL32(150, 150, 160, 255);
+    const ImU32 VERTICAL_JUNCTION_COLOR = IM_COL32(255, 150, 100, 255); // Orange for vertical junctions
 
     // UI styling constants
     const ImVec4 COLOR_HEADER = ImVec4(0.26f, 0.59f, 0.98f, 0.80f);
@@ -237,6 +239,8 @@ void Station::interpretSequence(const std::string& sequence) {
     state.angle = 0.0f;
     state.length = m_params.baseLength;
     state.generation = 0;
+    state.verticalOffset = 0.0f;
+    state.hasVerticalChild = false;
 
     // Add starting junction
     addJunction(state.position, state.generation);
@@ -255,6 +259,22 @@ void Station::interpretSequence(const std::string& sequence) {
 
                 // Add junction at the end of the module
                 addJunction(newPos, state.generation);
+
+                // Possibly create vertical modules (only if we haven't already in this branch)
+                if (m_params.allowVerticalModules &&
+                    !state.hasVerticalChild &&
+                    getRandomFloat(0.0f, 1.0f) < m_params.verticalProbability) {
+
+                    // Randomly choose up or down
+                    bool pointingUp = getRandomFloat(0.0f, 1.0f) > 0.5f;
+                    const float vertLength = actualLength * 0.7f; // Slightly shorter
+                    const int vertModuleType = getRandomInt(0, NUM_MODULE_TYPES - 1);
+
+                    addVerticalModule(newPos, state.verticalOffset, pointingUp, vertLength, vertModuleType, state.generation);
+
+                    // Mark that this branch has spawned a vertical module
+                    state.hasVerticalChild = true;
+                }
 
                 // Possibly create loop connections
                 if (m_params.allowLoops &&
@@ -302,13 +322,33 @@ void Station::addModule(const glm::vec2& startPos, const glm::vec2& endPos, floa
     module.length = length;
     module.moduleType = moduleType;
     module.generation = generation;
+    module.verticalOffset = 0.0f;
+    module.isVertical = false;
+    m_modules.push_back(module);
+}
+
+void Station::addVerticalModule(const glm::vec2& basePos, float baseVerticalOffset, bool pointingUp, float length, int moduleType, int generation) {
+    StationModule module;
+    module.startPos = basePos;
+    module.endPos = basePos; // Same horizontal position
+    module.rotation = 0.0f;
+    module.length = length;
+    module.moduleType = moduleType;
+    module.generation = generation;
+    module.verticalOffset = baseVerticalOffset;
+    module.isVertical = true;
+
+    // Add vertical junction at the end of the vertical module
+    float endVerticalOffset = pointingUp ? (baseVerticalOffset + length) : (baseVerticalOffset - length);
+    addVerticalJunction(basePos, endVerticalOffset, generation);
+
     m_modules.push_back(module);
 }
 
 void Station::addJunction(const glm::vec2& position, int generation) {
-    // Check if junction already exists at this position
+    // Check if junction already exists at this position (with same vertical offset)
     for (const auto& junction : m_junctions) {
-        if (length(junction.position - position) < 0.1f) {
+        if (length(junction.position - position) < 0.1f && std::abs(junction.verticalOffset) < 0.1f) {
             return; // Junction already exists here
         }
     }
@@ -316,6 +356,22 @@ void Station::addJunction(const glm::vec2& position, int generation) {
     ModuleJunction junction;
     junction.position = position;
     junction.generation = generation;
+    junction.verticalOffset = 0.0f;
+    m_junctions.push_back(junction);
+}
+
+void Station::addVerticalJunction(const glm::vec2& position, float verticalOffset, int generation) {
+    // Check if junction already exists at this position and vertical offset
+    for (const auto& junction : m_junctions) {
+        if (length(junction.position - position) < 0.1f && std::abs(junction.verticalOffset - verticalOffset) < 0.1f) {
+            return; // Junction already exists here
+        }
+    }
+
+    ModuleJunction junction;
+    junction.position = position;
+    junction.generation = generation;
+    junction.verticalOffset = verticalOffset;
     m_junctions.push_back(junction);
 }
 
@@ -348,6 +404,11 @@ int Station::findNearestJunction(const glm::vec2& position, float maxDistance) c
     float minDist = maxDistance;
 
     for (size_t i = 0; i < m_junctions.size(); ++i) {
+        // Only consider junctions at the same vertical level for horizontal connections
+        if (std::abs(m_junctions[i].verticalOffset) > 0.1f) {
+            continue;
+        }
+
         const float dist = length(m_junctions[i].position - position);
         if (dist < minDist && dist > 0.1f) { // Avoid finding the same junction
             minDist = dist;
@@ -379,35 +440,73 @@ glm::vec3 Station::getModuleColor(int moduleType) const {
 }
 
 glm::mat4 Station::calculateModuleTransform(const StationModule& module, float gapSize) const {
-    const vec3 fromPos3D(module.startPos.x, 0.0f, module.startPos.y);
-    const vec3 toPos3D(module.endPos.x, 0.0f, module.endPos.y);
+    if (module.isVertical) {
+        // Vertical module transform
+        const vec3 basePos3D(module.startPos.x, module.verticalOffset, module.startPos.y);
 
-    const vec3 direction = toPos3D - fromPos3D;
-    const float fullDistance = length(direction);
+        // Determine direction (up or down) based on stored data
+        // We need to check if there's an end junction above or below
+        float endY = module.verticalOffset;
+        for (const auto& junction : m_junctions) {
+            if (length(junction.position - module.startPos) < 0.1f &&
+                std::abs(junction.verticalOffset - module.verticalOffset) > 0.1f) {
+                endY = junction.verticalOffset;
+                break;
+            }
+        }
 
-    const float actualLength = std::max(0.1f, fullDistance - 2.0f * gapSize);
+        const bool pointingUp = endY > module.verticalOffset;
+        const float actualLength = std::max(0.1f, std::abs(endY - module.verticalOffset) - 2.0f * gapSize);
 
-    const vec3 normalizedDir = normalize(direction);
-    const vec3 centerPos = fromPos3D + normalizedDir * (gapSize + actualLength * 0.5f);
+        const vec3 centerPos = basePos3D + vec3(0.0f, (pointingUp ? 1.0f : -1.0f) * (gapSize + actualLength * 0.5f), 0.0f);
 
-    const vec3 defaultDir(1.0f, 0.0f, 0.0f);
+        mat4 transform = translate(mat4(1.0f), centerPos);
 
-    mat4 transform = translate(mat4(1.0f), centerPos);
+        // Rotate cylinder to point vertically
+        // Default cylinder is along X-axis, rotate to Y-axis
+        if (pointingUp) {
+            transform = rotate(transform, HALF_PI, vec3(0.0f, 0.0f, 1.0f));
+        }
+        else {
+            transform = rotate(transform, -HALF_PI, vec3(0.0f, 0.0f, 1.0f));
+        }
 
-    const vec3 rotAxis = cross(defaultDir, normalizedDir);
-    const float rotAxisLen = length(rotAxis);
+        transform = scale(transform, vec3(actualLength, 1.0f, 1.0f));
 
-    if (rotAxisLen > 0.001f) {
-        const float angle = std::acos(glm::clamp(dot(defaultDir, normalizedDir), -1.0f, 1.0f));
-        transform = rotate(transform, angle, normalize(rotAxis));
+        return transform;
     }
-    else if (dot(defaultDir, normalizedDir) < 0.0f) {
-        transform = rotate(transform, PI, vec3(0.0f, 1.0f, 0.0f));
+    else {
+        // Horizontal module transform (original code)
+        const vec3 fromPos3D(module.startPos.x, 0.0f, module.startPos.y);
+        const vec3 toPos3D(module.endPos.x, 0.0f, module.endPos.y);
+
+        const vec3 direction = toPos3D - fromPos3D;
+        const float fullDistance = length(direction);
+
+        const float actualLength = std::max(0.1f, fullDistance - 2.0f * gapSize);
+
+        const vec3 normalizedDir = normalize(direction);
+        const vec3 centerPos = fromPos3D + normalizedDir * (gapSize + actualLength * 0.5f);
+
+        const vec3 defaultDir(1.0f, 0.0f, 0.0f);
+
+        mat4 transform = translate(mat4(1.0f), centerPos);
+
+        const vec3 rotAxis = cross(defaultDir, normalizedDir);
+        const float rotAxisLen = length(rotAxis);
+
+        if (rotAxisLen > 0.001f) {
+            const float angle = std::acos(glm::clamp(dot(defaultDir, normalizedDir), -1.0f, 1.0f));
+            transform = rotate(transform, angle, normalize(rotAxis));
+        }
+        else if (dot(defaultDir, normalizedDir) < 0.0f) {
+            transform = rotate(transform, PI, vec3(0.0f, 1.0f, 0.0f));
+        }
+
+        transform = scale(transform, vec3(actualLength, 1.0f, 1.0f));
+
+        return transform;
     }
-
-    transform = scale(transform, vec3(actualLength, 1.0f, 1.0f));
-
-    return transform;
 }
 
 void Station::render3DStation(const glm::mat4& view, const glm::mat4& proj, GLuint shader) {
@@ -431,20 +530,31 @@ void Station::render3DStation(const glm::mat4& view, const glm::mat4& proj, GLui
 
         glUniformMatrix4fv(glGetUniformLocation(shader, "uModelViewMatrix"), 1, GL_FALSE, value_ptr(modelView));
 
-        const vec3 color = getModuleColor(module.moduleType);
+        vec3 color = getModuleColor(module.moduleType);
+
+        // Make vertical modules slightly brighter to distinguish them
+        if (module.isVertical) {
+            color = glm::min(color * 1.2f, vec3(1.0f));
+        }
+
         glUniform3fv(glGetUniformLocation(shader, "uColor"), 1, value_ptr(color));
 
         m_moduleMesh.draw();
     }
 
     // Render all junctions (the connection points - spheres)
-    const vec3 junctionColor(0.6f, 0.6f, 0.65f);
     for (const auto& junction : m_junctions) {
-        const vec3 pos3D(junction.position.x, 0.0f, junction.position.y);
+        const vec3 pos3D(junction.position.x, junction.verticalOffset, junction.position.y);
         const mat4 modelTransform = translate(mat4(1.0f), pos3D);
         const mat4 modelView = view * modelTransform;
 
         glUniformMatrix4fv(glGetUniformLocation(shader, "uModelViewMatrix"), 1, GL_FALSE, value_ptr(modelView));
+
+        // Use different color for vertical junctions
+        const vec3 junctionColor = (std::abs(junction.verticalOffset) > 0.1f)
+            ? vec3(0.9f, 0.6f, 0.4f)  // Orange for vertical junctions
+            : vec3(0.6f, 0.6f, 0.65f); // Gray for horizontal junctions
+
         glUniform3fv(glGetUniformLocation(shader, "uColor"), 1, value_ptr(junctionColor));
 
         m_junctionMesh.draw();
@@ -558,6 +668,27 @@ void Station::renderControlsPanel() {
         }
 
         ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        // NEW: Vertical modules section
+        needsRegeneration |= ImGui::Checkbox("Allow Vertical Modules", &m_params.allowVerticalModules);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Enable modules that extend upward or downward (one level deep)");
+        }
+
+        if (m_params.allowVerticalModules) {
+            ImGui::Spacing();
+            ImGui::Text("Vertical Probability");
+            ImGui::PushItemWidth(-1);
+            needsRegeneration |= ImGui::SliderFloat("##VertProb", &m_params.verticalProbability, 0.0f, 0.5f, "%.2f");
+            ImGui::PopItemWidth();
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Chance of creating a vertical module (limited to one per branch)");
+            }
+        }
+
+        ImGui::Spacing();
     }
 
     // === 3D RENDERING ===
@@ -651,6 +782,17 @@ void Station::renderControlsPanel() {
         ImGui::Text("Total Modules:");
         ImGui::NextColumn();
         ImGui::Text("%zu", m_modules.size());
+        ImGui::NextColumn();
+
+        // Count vertical modules
+        int verticalCount = 0;
+        for (const auto& module : m_modules) {
+            if (module.isVertical) verticalCount++;
+        }
+
+        ImGui::Text("Vertical Modules:");
+        ImGui::NextColumn();
+        ImGui::Text("%d", verticalCount);
         ImGui::NextColumn();
 
         ImGui::Text("Junctions:");
@@ -774,6 +916,18 @@ void Station::renderPreviewPanel() {
     ImGui::Text("Junction");
     ImGui::NextColumn();
 
+    // Add vertical junction to legend
+    cursor = ImGui::GetCursorScreenPos();
+    draw_list->AddCircleFilled(
+        ImVec2(cursor.x + legendCircleSize, cursor.y + legendCircleSize),
+        legendCircleSize,
+        VERTICAL_JUNCTION_COLOR
+    );
+    ImGui::Dummy(ImVec2(legendCircleSize * 2, legendCircleSize * 2));
+    ImGui::SameLine();
+    ImGui::Text("Vertical Junction");
+    ImGui::NextColumn();
+
     ImGui::Columns(1);
 
     ImGui::Spacing();
@@ -788,7 +942,8 @@ void Station::renderPreviewPanel() {
     ImGui::Spacing();
 
     ImGui::TextWrapped("Tip: Use the zoom controls to explore the station layout. "
-        "Colored lines represent functional modules (tubes), and gray circles show junction connectors.");
+        "Colored lines represent functional modules (tubes), gray circles show horizontal junctions, "
+        "and orange circles show vertical connection points.");
 }
 
 void Station::calculateBounds(vec2& minBounds, vec2& maxBounds) const {
@@ -883,23 +1038,57 @@ void Station::drawVisualization() {
     const float moduleLineThickness = 6.0f * glm::clamp(m_previewZoom, 0.5f, 2.0f);
 
     for (const auto& module : m_modules) {
-        const ImVec2 p1 = worldToScreen(module.startPos);
-        const ImVec2 p2 = worldToScreen(module.endPos);
-
-        const ImU32 color = (module.moduleType >= 0 && module.moduleType < NUM_MODULE_TYPES)
+        ImU32 color = (module.moduleType >= 0 && module.moduleType < NUM_MODULE_TYPES)
             ? MODULE_COLORS[module.moduleType]
             : IM_COL32(200, 100, 100, 255);
 
-        // Draw shadow
-        draw_list->AddLine(
-            ImVec2(p1.x + 1, p1.y + 1),
-            ImVec2(p2.x + 1, p2.y + 1),
-            IM_COL32(0, 0, 0, 80),
-            moduleLineThickness
-        );
+        if (module.isVertical) {
+            // Draw vertical modules as a vertical line with a special marker
+            const ImVec2 p = worldToScreen(module.startPos);
 
-        // Draw module
-        draw_list->AddLine(p1, p2, color, moduleLineThickness);
+            // Draw a vertical indicator (upward/downward arrow-like symbol)
+            const float arrowSize = 8.0f * glm::clamp(m_previewZoom, 0.5f, 2.0f);
+
+            // Shadow
+            draw_list->AddLine(
+                ImVec2(p.x + 1, p.y - arrowSize + 1),
+                ImVec2(p.x + 1, p.y + arrowSize + 1),
+                IM_COL32(0, 0, 0, 80),
+                moduleLineThickness
+            );
+
+            // Vertical line
+            draw_list->AddLine(
+                ImVec2(p.x, p.y - arrowSize),
+                ImVec2(p.x, p.y + arrowSize),
+                color,
+                moduleLineThickness
+            );
+
+            // Draw small horizontal bar to indicate vertical module
+            draw_list->AddLine(
+                ImVec2(p.x - arrowSize * 0.5f, p.y),
+                ImVec2(p.x + arrowSize * 0.5f, p.y),
+                color,
+                moduleLineThickness * 0.7f
+            );
+        }
+        else {
+            // Horizontal modules (original code)
+            const ImVec2 p1 = worldToScreen(module.startPos);
+            const ImVec2 p2 = worldToScreen(module.endPos);
+
+            // Draw shadow
+            draw_list->AddLine(
+                ImVec2(p1.x + 1, p1.y + 1),
+                ImVec2(p2.x + 1, p2.y + 1),
+                IM_COL32(0, 0, 0, 80),
+                moduleLineThickness
+            );
+
+            // Draw module
+            draw_list->AddLine(p1, p2, color, moduleLineThickness);
+        }
     }
 
     // Draw junctions (connection points - small circles)
@@ -907,6 +1096,11 @@ void Station::drawVisualization() {
 
     for (const auto& junction : m_junctions) {
         const ImVec2 center = worldToScreen(junction.position);
+
+        // Choose color based on whether it's a vertical junction
+        const ImU32 jColor = (std::abs(junction.verticalOffset) > 0.1f)
+            ? VERTICAL_JUNCTION_COLOR
+            : JUNCTION_COLOR;
 
         // Draw shadow
         draw_list->AddCircleFilled(
@@ -917,8 +1111,13 @@ void Station::drawVisualization() {
         );
 
         // Draw junction
-        draw_list->AddCircleFilled(center, junctionRadius, JUNCTION_COLOR, 12);
-        draw_list->AddCircle(center, junctionRadius, IM_COL32(80, 80, 90, 255), 12, 1.5f);
+        draw_list->AddCircleFilled(center, junctionRadius, jColor, 12);
+
+        const ImU32 borderColor = (std::abs(junction.verticalOffset) > 0.1f)
+            ? IM_COL32(180, 100, 50, 255)
+            : IM_COL32(80, 80, 90, 255);
+
+        draw_list->AddCircle(center, junctionRadius, borderColor, 12, 1.5f);
     }
 
     // End clipping

@@ -1,3 +1,4 @@
+
 #pragma once
 
 #include <cgra/cgra_mesh.hpp>
@@ -14,6 +15,8 @@ struct StationModule {
     float length;            // Length of the module
     int moduleType;          // 0=corridor, 1=habitat, 2=docking, 3=power
     int generation;          // L-System generation level
+    float verticalOffset;    // Y-axis offset for vertical modules
+    bool isVertical;         // True if module points up/down
 
     StationModule()
         : startPos(0.0f)
@@ -22,6 +25,8 @@ struct StationModule {
         , length(1.0f)
         , moduleType(0)
         , generation(0)
+        , verticalOffset(0.0f)
+        , isVertical(false)
     {
     }
 };
@@ -30,10 +35,12 @@ struct StationModule {
 struct ModuleJunction {
     glm::vec2 position;
     int generation;
+    float verticalOffset;    // Y-axis offset for vertical junctions
 
     ModuleJunction()
         : position(0.0f)
         , generation(0)
+        , verticalOffset(0.0f)
     {
     }
 };
@@ -52,6 +59,8 @@ struct LSystemParams {
     float connectionProbability = 0.2f;
     float minLength = 2.0f;
     bool allowLoops = true;
+    bool allowVerticalModules = true;  // New parameter
+    float verticalProbability = 0.15f; // New parameter
     int seed = 1701;
 };
 
@@ -112,6 +121,8 @@ private:
         float angle;
         float length;
         int generation;
+        float verticalOffset;        // New field
+        bool hasVerticalChild;       // New field - tracks if this branch already spawned a vertical module
     };
     std::vector<TurtleState> m_stateStack;
 
@@ -124,6 +135,8 @@ private:
     // Module management
     void addModule(const glm::vec2& startPos, const glm::vec2& endPos, float rotation, float length, int moduleType, int generation);
     void addJunction(const glm::vec2& position, int generation);
+    void addVerticalModule(const glm::vec2& basePos, float baseVerticalOffset, bool pointingUp, float length, int moduleType, int generation); // New method
+    void addVerticalJunction(const glm::vec2& position, float verticalOffset, int generation); // New method
     void connectNearbyJunctions(const glm::vec2& newJunctionPos, int generation);
     bool isOverlapping(const glm::vec2& pos, float minDist) const;
     int findNearestJunction(const glm::vec2& position, float maxDistance) const;

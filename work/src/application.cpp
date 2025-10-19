@@ -175,16 +175,16 @@ void Application::render() {
 	m_station.render3DStation(view, proj, m_default_shader);
 
 	// Draw cylinder BEFORE lava lamp to ensure proper depth ordering
-	if (m_drawCylinder) {
-		// Use default shader for cylinder to avoid environment mapping
-		glUseProgram(m_default_shader);
+	//if (m_drawCylinder) {
+	//	// Use default shader for cylinder to avoid environment mapping
+	//	glUseProgram(m_default_shader);
 
-		m_cylinderModel.draw(view, proj);
+	//	m_cylinderModel.draw(view, proj);
 
-		// Reset culling state
-		glCullFace(GL_BACK);
-		glDisable(GL_CULL_FACE);
-	}
+	//	// Reset culling state
+	//	glCullFace(GL_BACK);
+	//	glDisable(GL_CULL_FACE);
+	//}
 
 
 	// Render lava lamp
@@ -195,7 +195,7 @@ void Application::render() {
 	);
 
 	// draw the original model (if desired)
-	m_model.draw(view, proj);
+	//m_model.draw(view, proj);
 }
 
 void Application::renderGUI() {
