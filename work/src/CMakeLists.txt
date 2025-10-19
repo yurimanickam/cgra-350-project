@@ -20,6 +20,9 @@ SET(sources
     	"yuri/station.cpp"
     	"yuri/station.hpp"
 
+    	"yuri/objloader.cpp"
+    	"yuri/objloader.hpp"
+
 	"david/lava_lamp.cpp"
 	"david/lava_lamp.hpp"
 

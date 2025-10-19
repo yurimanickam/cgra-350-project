@@ -19,6 +19,8 @@
 #include "matt/render_utils.hpp"
 #include "matt/pbr.hpp"
 
+#include "yuri/objloader.hpp"
+
 using namespace std;
 using namespace cgra;
 using namespace glm;
@@ -44,6 +46,8 @@ Application::Application(GLFWwindow* window) : m_window(window) {
 	m_shader = m_default_shader;
 	m_model.shader = m_shader;
 	//m_model.mesh = load_wavefront_data(CGRA_SRCDIR + std::string("/res//assets//teapot.obj")).build();
+	m_model.mesh = cgra::load_obj_data(CGRA_SRCDIR + std::string("/res/assets/armadillo.obj")).build();
+
 	m_model.color = vec3(1, 0, 0);
 
 	// Initialize lava lamp using new LavaLamp API
@@ -191,7 +195,7 @@ void Application::render() {
 	);
 
 	// draw the original model (if desired)
-	//m_model.draw(view, proj);
+	m_model.draw(view, proj);
 
 	//if (m_drawCylinder) {
 	//	m_cylinderModel.draw(view, proj);
