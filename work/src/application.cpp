@@ -268,7 +268,7 @@ void Application::mouseButtonCallback(int button, int action, int mods) {
 
 void Application::scrollCallback(double xoffset, double yoffset) {
 	(void)xoffset; // currently un-used
-	m_cameraSpeed *= pow(1.1f, -yoffset);
+	m_cameraSpeed *= pow(1.1f, yoffset);
 }
 
 void Application::keyCallback(int key, int scancode, int action, int mods) {
