@@ -66,8 +66,6 @@ Application::Application(GLFWwindow* window) : m_window(window) {
 	m_cylinderModel.modelTransform = glm::translate(glm::mat4(1.0f), glm::vec3(-8.0f, cyl_height / 2.0f, 0.0f));
 
 	m_station.initializeLSystem();
-
-
 }
 
 
@@ -173,7 +171,8 @@ void Application::render() {
 	if (m_show_axis) drawAxis(view, proj);
 	glPolygonMode(GL_FRONT_AND_BACK, (m_showWireframe) ? GL_LINE : GL_FILL);
 
-
+	// Draw the L-System space station in 3D
+	m_station.render3DStation(view, proj, m_default_shader);
 
 	// Draw cylinder BEFORE lava lamp to ensure proper depth ordering
 	if (m_drawCylinder) {
@@ -197,10 +196,6 @@ void Application::render() {
 
 	// draw the original model (if desired)
 	m_model.draw(view, proj);
-
-	//if (m_drawCylinder) {
-	//	m_cylinderModel.draw(view, proj);
-	//}
 }
 
 void Application::renderGUI() {

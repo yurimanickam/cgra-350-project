@@ -2,7 +2,10 @@
 #include <algorithm>
 #include <cmath>
 #include <cgra/cgra_mesh.hpp>
+#include <cgra/cgra_geometry.hpp>
 #include <glm/gtc/constants.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
 #include <imgui.h>
 
 using namespace glm;
@@ -25,6 +28,53 @@ namespace {
 
 Station::Station() {
     initializeLSystem();
+    initializeMeshes();
+}
+
+void Station::initializeMeshes() {
+    // Create cylinder mesh (horizontal, along X-axis)
+    m_cylinderMesh = createCylinderMesh(m_cylinderRadius, 1.0f, 16, false);
+
+    // Create sphere mesh for nodes
+    using namespace cgra;
+    mesh_builder builder(GL_TRIANGLES);
+    const int stacks = 16;
+    const int slices = 16;
+
+    for (int i = 0; i <= stacks; ++i) {
+        const float phi = PI * float(i) / float(stacks);
+        const float y = m_nodeRadius * std::cos(phi);
+        const float radiusAtY = m_nodeRadius * std::sin(phi);
+
+        for (int j = 0; j <= slices; ++j) {
+            const float theta = TWO_PI * float(j) / float(slices);
+            const float x = radiusAtY * std::cos(theta);
+            const float z = radiusAtY * std::sin(theta);
+
+            const vec3 pos(x, y, z);
+            const vec3 normal = normalize(pos);
+            const vec2 uv(float(j) / slices, float(i) / stacks);
+
+            builder.vertices.push_back({ pos, normal, uv });
+        }
+    }
+
+    for (int i = 0; i < stacks; ++i) {
+        for (int j = 0; j < slices; ++j) {
+            const int curr = i * (slices + 1) + j;
+            const int next = curr + slices + 1;
+
+            builder.indices.push_back(curr);
+            builder.indices.push_back(next);
+            builder.indices.push_back(curr + 1);
+
+            builder.indices.push_back(curr + 1);
+            builder.indices.push_back(next);
+            builder.indices.push_back(next + 1);
+        }
+    }
+
+    m_nodeMesh = builder.build();
 }
 
 cgra::gl_mesh Station::createCylinderMesh(float radius, float length, int subdivisions, bool capped) {
@@ -92,7 +142,6 @@ cgra::gl_mesh Station::createCylinderMesh(float radius, float length, int subdiv
 
     return builder.build();
 }
-
 
 void Station::initializeLSystem() {
     m_rng.seed(m_params.seed);
@@ -307,6 +356,99 @@ int Station::getRandomInt(int min, int max) {
     return dist(m_rng);
 }
 
+glm::vec3 Station::getModuleColor(int moduleType) const {
+    switch (moduleType) {
+    case 0: return glm::vec3(0.9f, 0.9f, 0.9f); // Corridor - white
+    case 1: return glm::vec3(0.4f, 0.9f, 0.4f); // Habitat - green
+    case 2: return glm::vec3(0.4f, 0.4f, 0.9f); // Docking - blue
+    case 3: return glm::vec3(0.9f, 0.9f, 0.4f); // Power - yellow
+    default: return glm::vec3(0.7f, 0.7f, 0.7f);
+    }
+}
+
+glm::mat4 Station::calculateConnectionTransform(const LSystemNode& from, const LSystemNode& to, float gapSize) const {
+    // Convert 2D positions to 3D (Y becomes the vertical axis)
+    const vec3 fromPos3D(from.position.x, 0.0f, from.position.y);
+    const vec3 toPos3D(to.position.x, 0.0f, to.position.y);
+
+    // Calculate direction and distance
+    const vec3 direction = toPos3D - fromPos3D;
+    const float fullDistance = length(direction);
+
+    // Account for gaps at both ends
+    const float actualLength = std::max(0.1f, fullDistance - 2.0f * gapSize);
+
+    // Calculate center position (accounting for gaps)
+    const vec3 normalizedDir = normalize(direction);
+    const vec3 centerPos = fromPos3D + normalizedDir * (gapSize + actualLength * 0.5f);
+
+    // Calculate rotation to align cylinder with connection
+    // Default cylinder is along X-axis (1, 0, 0)
+    const vec3 defaultDir(1.0f, 0.0f, 0.0f);
+
+    mat4 transform = translate(mat4(1.0f), centerPos);
+
+    // Calculate rotation axis and angle
+    const vec3 rotAxis = cross(defaultDir, normalizedDir);
+    const float rotAxisLen = length(rotAxis);
+
+    if (rotAxisLen > 0.001f) {
+        const float angle = std::acos(glm::clamp(dot(defaultDir, normalizedDir), -1.0f, 1.0f));
+        transform = rotate(transform, angle, normalize(rotAxis));
+    }
+    else if (dot(defaultDir, normalizedDir) < 0.0f) {
+        // 180 degree rotation needed
+        transform = rotate(transform, PI, vec3(0.0f, 1.0f, 0.0f));
+    }
+
+    // Scale to match connection length
+    transform = scale(transform, vec3(actualLength, 1.0f, 1.0f));
+
+    return transform;
+}
+
+void Station::render3DStation(const glm::mat4& view, const glm::mat4& proj, GLuint shader) {
+    if (!m_drawStation || m_nodes.empty()) {
+        return;
+    }
+
+    glUseProgram(shader);
+    glUniformMatrix4fv(glGetUniformLocation(shader, "uProjectionMatrix"), 1, GL_FALSE, value_ptr(proj));
+
+    const float gapSize = m_nodeRadius * 1.2f; // Gap for node spheres
+
+    // Draw connections as cylinders
+    for (const auto& conn : m_connections) {
+        const LSystemNode& fromNode = m_nodes[conn.first];
+        const LSystemNode& toNode = m_nodes[conn.second];
+
+        const mat4 modelTransform = calculateConnectionTransform(fromNode, toNode, gapSize);
+        const mat4 modelView = view * modelTransform;
+
+        glUniformMatrix4fv(glGetUniformLocation(shader, "uModelViewMatrix"), 1, GL_FALSE, value_ptr(modelView));
+
+        // Use average color of connected nodes
+        const vec3 color = (getModuleColor(fromNode.moduleType) + getModuleColor(toNode.moduleType)) * 0.5f;
+        glUniform3fv(glGetUniformLocation(shader, "uColor"), 1, value_ptr(color));
+
+        m_cylinderMesh.draw();
+    }
+
+    // Draw nodes as spheres
+    for (const auto& node : m_nodes) {
+        const vec3 pos3D(node.position.x, 0.0f, node.position.y);
+        const mat4 modelTransform = translate(mat4(1.0f), pos3D);
+        const mat4 modelView = view * modelTransform;
+
+        glUniformMatrix4fv(glGetUniformLocation(shader, "uModelViewMatrix"), 1, GL_FALSE, value_ptr(modelView));
+
+        const vec3 color = getModuleColor(node.moduleType);
+        glUniform3fv(glGetUniformLocation(shader, "uColor"), 1, value_ptr(color));
+
+        m_nodeMesh.draw();
+    }
+}
+
 void Station::renderGUI() {
     renderControlsGUI();
     renderPreviewGUI();
@@ -319,6 +461,17 @@ void Station::renderControlsGUI() {
 
     bool needsRegeneration = false;
 
+    ImGui::Text("3D Rendering");
+    ImGui::Separator();
+    ImGui::Checkbox("Draw 3D Station", &m_drawStation);
+    ImGui::SliderFloat("Cylinder Radius", &m_cylinderRadius, 0.5f, 5.0f);
+    ImGui::SliderFloat("Node Radius", &m_nodeRadius, 1.0f, 8.0f);
+
+    if (ImGui::Button("Rebuild Meshes")) {
+        initializeMeshes();
+    }
+
+    ImGui::Spacing();
     ImGui::Text("Generation Parameters");
     ImGui::Separator();
 

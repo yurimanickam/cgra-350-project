@@ -57,10 +57,14 @@ public:
     // GUI rendering
     void renderGUI();
 
+    // 3D rendering
+    void render3DStation(const glm::mat4& view, const glm::mat4& proj, GLuint shader);
+
     // Accessors
     LSystemParams& getParams() { return m_params; }
     const std::vector<LSystemNode>& getNodes() const { return m_nodes; }
     const std::vector<std::pair<int, int>>& getConnections() const { return m_connections; }
+    bool shouldDrawStation() const { return m_drawStation; }
 
 private:
     // L-System data
@@ -73,6 +77,13 @@ private:
 
     // Visualization
     float m_previewZoom = 1.0f;
+    bool m_drawStation = true;
+
+    // 3D rendering
+    cgra::gl_mesh m_cylinderMesh;
+    cgra::gl_mesh m_nodeMesh;
+    float m_cylinderRadius = 2.0f;
+    float m_nodeRadius = 3.0f;
 
     // Turtle state for interpretation
     struct TurtleState {
@@ -103,4 +114,9 @@ private:
     void renderPreviewGUI();
     void drawVisualization();
     void calculateBounds(glm::vec2& minBounds, glm::vec2& maxBounds) const;
+
+    // 3D rendering helpers
+    void initializeMeshes();
+    glm::mat4 calculateConnectionTransform(const LSystemNode& from, const LSystemNode& to, float gapSize) const;
+    glm::vec3 getModuleColor(int moduleType) const;
 };
