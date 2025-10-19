@@ -51,6 +51,18 @@ Application::Application(GLFWwindow* window) : m_window(window) {
 		CGRA_SRCDIR + std::string("//res//shaders//lava_vertex.glsl"),
 		CGRA_SRCDIR + std::string("//res//shaders//lava_fragment.glsl")
 	);
+
+	float cyl_radius = 2.0f;
+	float cyl_height = 6.0f;
+	int cyl_subdiv = 48;
+	bool cyl_capped = true;
+	m_cylinderModel.shader = m_default_shader;
+	m_cylinderModel.mesh = m_station.createCylinderMesh(cyl_radius, cyl_height, cyl_subdiv, cyl_capped);
+	m_cylinderModel.color = glm::vec3(0.1f, 0.8f, 0.3f);
+	m_cylinderModel.modelTransform = glm::translate(glm::mat4(1.0f), glm::vec3(-8.0f, cyl_height / 2.0f, 0.0f));
+
+
+
 }
 
 
@@ -165,6 +177,10 @@ void Application::render() {
 
 	// draw the original model (if desired)
 	//m_model.draw(view, proj);
+
+	if (m_drawCylinder) {
+		m_cylinderModel.draw(view, proj);
+	}
 }
 
 void Application::renderGUI() {
