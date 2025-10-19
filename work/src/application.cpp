@@ -66,6 +66,8 @@ Application::Application(GLFWwindow* window) : m_window(window) {
 	m_cylinderModel.modelTransform = glm::translate(glm::mat4(1.0f), glm::vec3(-8.0f, cyl_height / 2.0f, 0.0f));
 
 	m_station.initializeLSystem();
+
+
 }
 
 
@@ -185,8 +187,6 @@ void Application::render() {
 		glDisable(GL_CULL_FACE);
 	}
 
-	// Render 3D space station modules
-	m_station.render3D(view, proj, m_default_shader);
 
 	// Render lava lamp
 	m_lavaLamp.renderLavaLamp(
@@ -197,6 +197,10 @@ void Application::render() {
 
 	// draw the original model (if desired)
 	m_model.draw(view, proj);
+
+	//if (m_drawCylinder) {
+	//	m_cylinderModel.draw(view, proj);
+	//}
 }
 
 void Application::renderGUI() {
@@ -230,10 +234,14 @@ void Application::renderGUI() {
 		m_lavaLamp.setHeaterTemperature(m_heaterTemp);
 	}
 
+	// Gravity is fixed now; don't expose a slider to avoid accidental changes.
+	// m_gravity is permanently -9.8 (set in initializeLavaLamp)
+
 	if (ImGui::SliderFloat("Blob Threshold", &m_threshold, 0.3f, 3.0f, "%.2f")) {
 		m_lavaLamp.setThreshold(m_threshold);
 	}
 
+	// In Application::renderGUI(), replace the Space Station section
 	ImGui::End();
 
 	ImGui::SetNextWindowPos(ImVec2(410, 5), ImGuiSetCond_Once);
@@ -261,10 +269,10 @@ void Application::renderGUI() {
 		loadPBRShaders(CGRA_SRCDIR + std::string("//res//textures//sunset.hdr"));
 	}
 
-	ImGui::End();
 
-	// Station GUI (includes the new "Show 3D Modules" checkbox)
+	//USE FOR STATION UI
 	m_station.renderGUI();
+	ImGui::End();
 }
 
 void Application::cursorPosCallback(double xpos, double ypos) {
@@ -338,4 +346,5 @@ void Application::updateCameraMovement(float deltaTime) {
 	if (m_moveRight)    m_cameraPos += right * velocity;
 	if (m_moveUp)       m_cameraPos += up * velocity;
 	if (m_moveDown)     m_cameraPos -= up * velocity;
+
 }

@@ -27,23 +27,23 @@ Station::Station() {
     initializeLSystem();
 }
 
-cgra::gl_mesh Station::createCylinderMesh(float radius, float height, int subdivisions, bool capped) {
+cgra::gl_mesh Station::createCylinderMesh(float radius, float length, int subdivisions, bool capped) {
     using namespace cgra;
 
     mesh_builder builder(GL_TRIANGLES);
-    const float halfHeight = height / 2.0f;
+    const float halfLength = length / 2.0f;
     const float deltaTheta = TWO_PI / float(subdivisions);
 
-    // Generate side vertices
+    // Generate side vertices (cylinder along the X axis)
     for (int i = 0; i <= subdivisions; ++i) {
         const float theta = i * deltaTheta;
-        const float x = radius * std::cos(theta);
+        const float y = radius * std::cos(theta);
         const float z = radius * std::sin(theta);
-        const vec3 normal = normalize(vec3(x, 0, z));
+        const vec3 normal = normalize(vec3(0, y, z));
         const float u = float(i) / subdivisions;
 
-        builder.vertices.push_back({ vec3(x, -halfHeight, z), normal, vec2(u, 0) });
-        builder.vertices.push_back({ vec3(x, +halfHeight, z), normal, vec2(u, 1) });
+        builder.vertices.push_back({ vec3(-halfLength, y, z), normal, vec2(u, 0) });
+        builder.vertices.push_back({ vec3(+halfLength, y, z), normal, vec2(u, 1) });
     }
 
     // Generate side indices
@@ -60,13 +60,13 @@ cgra::gl_mesh Station::createCylinderMesh(float radius, float height, int subdiv
 
     // Generate caps if requested
     if (capped) {
-        auto addCap = [&](float y, vec3 normal, bool reverseWinding) {
+        auto addCap = [&](float x, vec3 normal, bool reverseWinding) {
             const int centerIdx = builder.vertices.size();
-            builder.vertices.push_back({ vec3(0, y, 0), normal, vec2(0.5f, 0.5f) });
+            builder.vertices.push_back({ vec3(x, 0, 0), normal, vec2(0.5f, 0.5f) });
 
             for (int i = 0; i <= subdivisions; ++i) {
                 const float theta = i * deltaTheta;
-                const float x = radius * std::cos(theta);
+                const float y = radius * std::cos(theta);
                 const float z = radius * std::sin(theta);
                 const vec2 uv(0.5f + 0.5f * std::cos(theta), 0.5f + 0.5f * std::sin(theta));
                 builder.vertices.push_back({ vec3(x, y, z), normal, uv });
@@ -86,12 +86,13 @@ cgra::gl_mesh Station::createCylinderMesh(float radius, float height, int subdiv
             }
             };
 
-        addCap(-halfHeight, vec3(0, -1, 0), false);
-        addCap(+halfHeight, vec3(0, 1, 0), true);
+        addCap(-halfLength, vec3(-1, 0, 0), false);
+        addCap(+halfLength, vec3(1, 0, 0), true);
     }
 
     return builder.build();
 }
+
 
 void Station::initializeLSystem() {
     m_rng.seed(m_params.seed);
