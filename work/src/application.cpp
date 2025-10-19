@@ -19,6 +19,8 @@
 #include "matt/render_utils.hpp"
 #include "matt/pbr.hpp"
 
+#include "yuri/objloader.hpp"
+
 using namespace std;
 using namespace cgra;
 using namespace glm;
@@ -35,7 +37,7 @@ void basic_model::draw(const glm::mat4& view, const glm::mat4 proj) {
 	glUniformMatrix4fv(glGetUniformLocation(shader, "uModelViewMatrix"), 1, GL_FALSE, value_ptr(modelview));
 	glUniform3fv(glGetUniformLocation(shader, "uColor"), 1, value_ptr(color));
 
-    mesh.draw(); // draw
+	mesh.draw(); // draw
 }
 
 Application::Application(GLFWwindow* window) : m_window(window) {
@@ -44,6 +46,8 @@ Application::Application(GLFWwindow* window) : m_window(window) {
 	m_shader = m_default_shader;
 	m_model.shader = m_shader;
 	//m_model.mesh = load_wavefront_data(CGRA_SRCDIR + std::string("/res//assets//teapot.obj")).build();
+	m_model.mesh = cgra::load_obj_data(CGRA_SRCDIR + std::string("/res/assets/test.obj")).build();
+
 	m_model.color = vec3(1, 0, 0);
 
 	// Initialize lava lamp using new LavaLamp API
@@ -61,8 +65,7 @@ Application::Application(GLFWwindow* window) : m_window(window) {
 	m_cylinderModel.color = glm::vec3(0.1f, 0.8f, 0.3f);
 	m_cylinderModel.modelTransform = glm::translate(glm::mat4(1.0f), glm::vec3(-8.0f, cyl_height / 2.0f, 0.0f));
 
-
-
+	m_station.initializeLSystem();
 }
 
 
@@ -89,20 +92,20 @@ void Application::render() {
 
 	//Added wasd camera
 
-    // Update camera movement
-    updateCameraMovement(deltaTime);
+	// Update camera movement
+	updateCameraMovement(deltaTime);
 
-    // Calculate camera direction vectors
-    vec3 front;
-    front.x = cos(m_pitch) * sin(m_yaw);
-    front.y = sin(m_pitch);
-    front.z = -cos(m_pitch) * cos(m_yaw);
-    front = normalize(front);
-    vec3 right = normalize(cross(front, vec3(0, 1, 0)));
-    vec3 up = normalize(cross(right, front));
+	// Calculate camera direction vectors
+	vec3 front;
+	front.x = cos(m_pitch) * sin(m_yaw);
+	front.y = sin(m_pitch);
+	front.z = -cos(m_pitch) * cos(m_yaw);
+	front = normalize(front);
+	vec3 right = normalize(cross(front, vec3(0, 1, 0)));
+	vec3 up = normalize(cross(right, front));
 
-    // view matrix (lookat)
-    mat4 view = lookAt(m_cameraPos, m_cameraPos + front, up);
+	// view matrix (lookat)
+	mat4 view = lookAt(m_cameraPos, m_cameraPos + front, up);
 
 
 	//end update camera
@@ -168,19 +171,20 @@ void Application::render() {
 	if (m_show_axis) drawAxis(view, proj);
 	glPolygonMode(GL_FRONT_AND_BACK, (m_showWireframe) ? GL_LINE : GL_FILL);
 
-
+	// Draw the L-System space station in 3D
+	m_station.render3DStation(view, proj, m_default_shader);
 
 	// Draw cylinder BEFORE lava lamp to ensure proper depth ordering
-	if (m_drawCylinder) {
-		// Use default shader for cylinder to avoid environment mapping
-		glUseProgram(m_default_shader);
+	//if (m_drawCylinder) {
+	//	// Use default shader for cylinder to avoid environment mapping
+	//	glUseProgram(m_default_shader);
 
-		m_cylinderModel.draw(view, proj);
+	//	m_cylinderModel.draw(view, proj);
 
-		// Reset culling state
-		glCullFace(GL_BACK);
-		glDisable(GL_CULL_FACE);
-	}
+	//	// Reset culling state
+	//	glCullFace(GL_BACK);
+	//	glDisable(GL_CULL_FACE);
+	//}
 
 
 	// Render lava lamp
@@ -192,10 +196,6 @@ void Application::render() {
 
 	// draw the original model (if desired)
 	//m_model.draw(view, proj);
-
-	//if (m_drawCylinder) {
-	//	m_cylinderModel.draw(view, proj);
-	//}
 }
 
 void Application::renderGUI() {
@@ -206,10 +206,10 @@ void Application::renderGUI() {
 
 	// display current camera parameters
 	ImGui::Text("Application %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
-    ImGui::SliderFloat("Pitch", &m_pitch, -pi<float>() / 2, pi<float>() / 2, "%.2f");
-    ImGui::SliderFloat("Yaw", &m_yaw, -pi<float>(), pi<float>(), "%.2f");
+	ImGui::SliderFloat("Pitch", &m_pitch, -pi<float>() / 2, pi<float>() / 2, "%.2f");
+	ImGui::SliderFloat("Yaw", &m_yaw, -pi<float>(), pi<float>(), "%.2f");
 	ImGui::SliderFloat("Camera Speed", &m_cameraSpeed, 1.0f, 50.0f, "%.2f", 2.0f);
-    ImGui::Checkbox("Invert Mouse Y", &m_invertMouseY);
+	ImGui::Checkbox("Invert Mouse Y", &m_invertMouseY);
 
 	// helpful drawing options
 	ImGui::Checkbox("Show axis", &m_show_axis);
@@ -251,7 +251,7 @@ void Application::renderGUI() {
 	ImGui::Separator();
 
 	ImGui::Text("Change IBL Environment");
-	
+
 	if (ImGui::Button("Space Environment")) {
 		loadPBRShaders(CGRA_SRCDIR + std::string("//res//textures//space.hdr"));
 	}
@@ -263,30 +263,34 @@ void Application::renderGUI() {
 	if (ImGui::Button("Sunset Environment")) {
 		loadPBRShaders(CGRA_SRCDIR + std::string("//res//textures//sunset.hdr"));
 	}
+
+
+	//USE FOR STATION UI
+	m_station.renderGUI();
 	ImGui::End();
 }
 
 void Application::cursorPosCallback(double xpos, double ypos) {
-    if (m_leftMouseDown) {
-        vec2 whsize = m_windowsize / 2.0f;
-        float ysign = m_invertMouseY ? -1.0f : 1.0f;
+	if (m_leftMouseDown) {
+		vec2 whsize = m_windowsize / 2.0f;
+		float ysign = m_invertMouseY ? -1.0f : 1.0f;
 
-        // clamp the pitch to [-pi/2, pi/2]
-        m_pitch += ysign * float(acos(glm::clamp((m_mousePosition.y - whsize.y) / whsize.y, -1.0f, 1.0f))
-            - acos(glm::clamp((float(ypos) - whsize.y) / whsize.y, -1.0f, 1.0f)));
-        m_pitch = float(glm::clamp(m_pitch, -pi<float>() / 2, pi<float>() / 2));
+		// clamp the pitch to [-pi/2, pi/2]
+		m_pitch += ysign * float(acos(glm::clamp((m_mousePosition.y - whsize.y) / whsize.y, -1.0f, 1.0f))
+			- acos(glm::clamp((float(ypos) - whsize.y) / whsize.y, -1.0f, 1.0f)));
+		m_pitch = float(glm::clamp(m_pitch, -pi<float>() / 2, pi<float>() / 2));
 
-        // wrap the yaw to [-pi, pi]
-        m_yaw += float(acos(glm::clamp((m_mousePosition.x - whsize.x) / whsize.x, -1.0f, 1.0f))
-            - acos(glm::clamp((float(xpos) - whsize.x) / whsize.x, -1.0f, 1.0f)));
-        if (m_yaw > pi<float>())
-            m_yaw -= float(2 * pi<float>());
-        else if (m_yaw < -pi<float>())
-            m_yaw += float(2 * pi<float>());
-    }
+		// wrap the yaw to [-pi, pi]
+		m_yaw += float(acos(glm::clamp((m_mousePosition.x - whsize.x) / whsize.x, -1.0f, 1.0f))
+			- acos(glm::clamp((float(xpos) - whsize.x) / whsize.x, -1.0f, 1.0f)));
+		if (m_yaw > pi<float>())
+			m_yaw -= float(2 * pi<float>());
+		else if (m_yaw < -pi<float>())
+			m_yaw += float(2 * pi<float>());
+	}
 
-    // updated mouse position
-    m_mousePosition = vec2(xpos, ypos);
+	// updated mouse position
+	m_mousePosition = vec2(xpos, ypos);
 }
 
 void Application::mouseButtonCallback(int button, int action, int mods) {
@@ -303,17 +307,17 @@ void Application::scrollCallback(double xoffset, double yoffset) {
 }
 
 void Application::keyCallback(int key, int scancode, int action, int mods) {
-    // WASD + QE movement
-    bool pressed = (action == GLFW_PRESS || action == GLFW_REPEAT);
-    switch (key) {
-    case GLFW_KEY_W: m_moveForward = pressed; break;
-    case GLFW_KEY_S: m_moveBackward = pressed; break;
-    case GLFW_KEY_A: m_moveLeft = pressed; break;
-    case GLFW_KEY_D: m_moveRight = pressed; break;
-    case GLFW_KEY_Q: m_moveDown = pressed; break;
-    case GLFW_KEY_E: m_moveUp = pressed; break;
-    default: break;
-    }
+	// WASD + QE movement
+	bool pressed = (action == GLFW_PRESS || action == GLFW_REPEAT);
+	switch (key) {
+	case GLFW_KEY_W: m_moveForward = pressed; break;
+	case GLFW_KEY_S: m_moveBackward = pressed; break;
+	case GLFW_KEY_A: m_moveLeft = pressed; break;
+	case GLFW_KEY_D: m_moveRight = pressed; break;
+	case GLFW_KEY_Q: m_moveDown = pressed; break;
+	case GLFW_KEY_E: m_moveUp = pressed; break;
+	default: break;
+	}
 }
 
 void Application::charCallback(unsigned int c) {
@@ -321,21 +325,21 @@ void Application::charCallback(unsigned int c) {
 }
 
 void Application::updateCameraMovement(float deltaTime) {
-    // Calculate camera direction vectors
-    glm::vec3 front;
-    front.x = cos(m_pitch) * sin(m_yaw);
-    front.y = sin(m_pitch);
-    front.z = -cos(m_pitch) * cos(m_yaw);
-    front = glm::normalize(front);
-    glm::vec3 right = glm::normalize(glm::cross(front, glm::vec3(0, 1, 0)));
-    glm::vec3 up = glm::normalize(glm::cross(right, front));
+	// Calculate camera direction vectors
+	glm::vec3 front;
+	front.x = cos(m_pitch) * sin(m_yaw);
+	front.y = sin(m_pitch);
+	front.z = -cos(m_pitch) * cos(m_yaw);
+	front = glm::normalize(front);
+	glm::vec3 right = glm::normalize(glm::cross(front, glm::vec3(0, 1, 0)));
+	glm::vec3 up = glm::normalize(glm::cross(right, front));
 
-    float velocity = m_cameraSpeed * deltaTime;
-    if (m_moveForward)  m_cameraPos += front * velocity;
-    if (m_moveBackward) m_cameraPos -= front * velocity;
-    if (m_moveLeft)     m_cameraPos -= right * velocity;
-    if (m_moveRight)    m_cameraPos += right * velocity;
-    if (m_moveUp)       m_cameraPos += up * velocity;
-    if (m_moveDown)     m_cameraPos -= up * velocity;
+	float velocity = m_cameraSpeed * deltaTime;
+	if (m_moveForward)  m_cameraPos += front * velocity;
+	if (m_moveBackward) m_cameraPos -= front * velocity;
+	if (m_moveLeft)     m_cameraPos -= right * velocity;
+	if (m_moveRight)    m_cameraPos += right * velocity;
+	if (m_moveUp)       m_cameraPos += up * velocity;
+	if (m_moveDown)     m_cameraPos -= up * velocity;
 
 }
