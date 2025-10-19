@@ -403,54 +403,56 @@ void Station::renderLSystemGUI() {
 
     ImGui::End();
 
-    // Large preview/visualization window
+    // Smaller preview/visualization window
     ImGui::SetNextWindowPos(ImVec2(830, 375), ImGuiSetCond_Once);
-    ImGui::SetNextWindowSize(ImVec2(700, 700), ImGuiSetCond_Once);
+    ImGui::SetNextWindowSize(ImVec2(350, 350), ImGuiSetCond_Once); // smaller
     ImGui::Begin("L-System Station Layout Preview", 0);
+
+    // Optional: show current zoom or add zoom in/out buttons
+    ImGui::Text("Zoom: %.2fx", m_previewZoom);
+    if (ImGui::Button("Zoom In")) setPreviewZoom(m_previewZoom * 1.1f);
+    ImGui::SameLine();
+    if (ImGui::Button("Zoom Out")) setPreviewZoom(m_previewZoom / 1.1f);
+
     drawLSystemVisualization();
     ImGui::End();
 }
 
 void Station::drawLSystemVisualization() {
-    // Draw as large as possible in the window
     ImVec2 canvas_pos = ImGui::GetCursorScreenPos();
     ImVec2 window_size = ImGui::GetWindowSize();
-    // Leave some room for borders/text, and ensure minimum size
+    // Smaller preview
     ImVec2 canvas_size(
-        std::max(400.0f, window_size.x - 30.0f),
-        std::max(400.0f, window_size.y - 40.0f)
+        std::max(200.0f, window_size.x - 30.0f),
+        std::max(200.0f, window_size.y - 40.0f)
     );
 
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
-    // Calculate bounds
     glm::vec2 minBounds(FLT_MAX);
     glm::vec2 maxBounds(-FLT_MAX);
-
     for (const auto& node : m_nodes) {
         minBounds.x = std::min(minBounds.x, node.position.x);
         minBounds.y = std::min(minBounds.y, node.position.y);
         maxBounds.x = std::max(maxBounds.x, node.position.x);
         maxBounds.y = std::max(maxBounds.y, node.position.y);
     }
-
-    // Add padding
     glm::vec2 padding(25.0f, 25.0f);
     minBounds -= padding;
     maxBounds += padding;
-
     glm::vec2 worldSize = maxBounds - minBounds;
 
-    // Fit station to canvas, preserve aspect
-    float scale = (worldSize.x > 0.0f && worldSize.y > 0.0f)
+    // Fit station to canvas, preserve aspect, then apply user zoom
+    float fitScale = (worldSize.x > 0.0f && worldSize.y > 0.0f)
         ? std::min(canvas_size.x / worldSize.x, canvas_size.y / worldSize.y)
         : 1.0f;
+    float scale = fitScale * m_previewZoom;
 
-    // Center station in canvas
     glm::vec2 offset(
         (canvas_size.x - (worldSize.x * scale)) * 0.5f,
         (canvas_size.y - (worldSize.y * scale)) * 0.5f
     );
+
 
     // Draw white background for clarity
     draw_list->AddRectFilled(

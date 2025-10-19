@@ -53,6 +53,9 @@ public:
         int seed = 12345;
     } m_lsystemParams;
 
+    void setPreviewZoom(float zoom) { m_previewZoom = glm::clamp(zoom, 0.2f, 8.0f); }
+    float getPreviewZoom() const { return m_previewZoom; }
+
 private:
     std::vector<LSystemNode> m_nodes;
     std::vector<std::pair<int, int>> m_connections;
@@ -60,6 +63,9 @@ private:
     std::string m_currentSequence;
     std::string m_axiom;
     std::mt19937 m_rng;
+
+    float m_previewZoom = 1.0f;
+
 
     // Interpretation state
     struct TurtleState {
