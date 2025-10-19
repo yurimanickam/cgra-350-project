@@ -65,6 +65,8 @@ private:
     std::mt19937 m_rng;
 
     float m_previewZoom = 1.0f;
+    // Returns true if position is too close to any existing node (overlap)
+    bool isOverlapping(const glm::vec2& pos, float minDist);
 
 
     // Interpretation state

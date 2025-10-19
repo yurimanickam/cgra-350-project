@@ -208,52 +208,60 @@ void Station::interpretLSystem(const std::string& sequence) {
 
         switch (command) {
         case 'F': {
-            // Draw forward and create node
-            float lengthVar = getRandomFloat(-m_lsystemParams.lengthVariation, m_lsystemParams.lengthVariation);
-            float actualLength = std::max(m_lsystemParams.minLength,
-                currentState.length * (1.0f + lengthVar));
+            // Only allow exact 90 degree steps for the current angle
+            // So, the angle is always 0, 90, 180, or 270 degrees (in radians)
+            // This requires that + and - always change by 90 degrees exactly (see below in their cases)
+
+            // Compute the new position with the current fixed angle
+            float actualLength = std::max(m_lsystemParams.minLength, currentState.length);
 
             glm::vec2 direction(std::cos(currentState.angle), std::sin(currentState.angle));
             glm::vec2 newPos = currentState.position + direction * actualLength;
 
-            LSystemNode node;
-            node.position = newPos;
-            node.rotation = currentState.angle;
-            node.length = actualLength;
-            node.generation = currentState.generation;
-            node.moduleType = getRandomInt(0, 3); // Random module type
+            float minNodeDistance = m_lsystemParams.minLength; // Use the minLength as the minimum distance
 
-            int newNodeIndex = m_nodes.size();
-            m_nodes.push_back(node);
+            if (!isOverlapping(newPos, minNodeDistance)) {
+                LSystemNode node;
+                node.position = newPos;
+                node.rotation = currentState.angle;
+                node.length = actualLength;
+                node.generation = currentState.generation;
+                node.moduleType = getRandomInt(0, 3); // Random module type
 
-            // Connect to previous node
-            if (currentNodeIndex >= 0) {
-                addConnection(currentNodeIndex, newNodeIndex);
-            }
+                int newNodeIndex = m_nodes.size();
+                m_nodes.push_back(node);
 
-            // Check for potential connections to nearby nodes
-            if (m_lsystemParams.allowLoops && getRandomFloat(0.0f, 1.0f) < m_lsystemParams.connectionProbability) {
-                int nearNode = findNearestNode(newPos, actualLength * 2.0f);
-                if (nearNode >= 0 && nearNode != newNodeIndex && nearNode != currentNodeIndex) {
-                    addConnection(newNodeIndex, nearNode);
+                // Connect to previous node
+                if (currentNodeIndex >= 0) {
+                    addConnection(currentNodeIndex, newNodeIndex);
                 }
-            }
 
-            currentState.position = newPos;
-            currentState.length *= m_lsystemParams.lengthDecay;
-            currentNodeIndex = newNodeIndex;
+                // Check for potential connections to nearby nodes
+                if (m_lsystemParams.allowLoops && getRandomFloat(0.0f, 1.0f) < m_lsystemParams.connectionProbability) {
+                    int nearNode = findNearestNode(newPos, actualLength * 2.0f);
+                    if (nearNode >= 0 && nearNode != newNodeIndex && nearNode != currentNodeIndex) {
+                        addConnection(newNodeIndex, nearNode);
+                    }
+                }
+
+                currentState.position = newPos;
+                currentState.length *= m_lsystemParams.lengthDecay;
+                currentNodeIndex = newNodeIndex;
+            }
+            // If overlapping, do not place the node or advance the position
             break;
         }
         case '+': {
-            // Turn left
-            float angleVar = getRandomFloat(-m_lsystemParams.angleVariation, m_lsystemParams.angleVariation);
-            currentState.angle += glm::radians(m_lsystemParams.baseAngle + angleVar);
+            // Turn left by exactly 90 degrees (in radians)
+            currentState.angle += glm::half_pi<float>(); // pi/2 radians = 90 degrees
+            // Normalize the angle to [0, 2pi) for consistency
+            if (currentState.angle >= glm::two_pi<float>()) currentState.angle -= glm::two_pi<float>();
             break;
         }
         case '-': {
-            // Turn right
-            float angleVar = getRandomFloat(-m_lsystemParams.angleVariation, m_lsystemParams.angleVariation);
-            currentState.angle -= glm::radians(m_lsystemParams.baseAngle + angleVar);
+            // Turn right by exactly 90 degrees (in radians)
+            currentState.angle -= glm::half_pi<float>();
+            if (currentState.angle < 0.0f) currentState.angle += glm::two_pi<float>();
             break;
         }
         case '[': {
@@ -322,6 +330,17 @@ int Station::getRandomInt(int min, int max) {
     std::uniform_int_distribution<int> dist(min, max);
     return dist(m_rng);
 }
+
+bool Station::isOverlapping(const glm::vec2& pos, float minDist) {
+    for (const auto& node : m_nodes) {
+        if (glm::length(node.position - pos) < minDist) {
+            return true;
+        }
+    }
+    return false;
+}
+
+
 
 void Station::renderLSystemGUI() {
     // Make all L-system controls in their own window, with a big preview canvas
