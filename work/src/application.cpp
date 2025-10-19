@@ -179,7 +179,7 @@ void Application::render() {
 	//m_model.draw(view, proj);
 
 	if (m_drawCylinder) {
-		// Ensure proper depth testing for cylinder
+
 
 		m_cylinderModel.draw(view, proj);
 	}
