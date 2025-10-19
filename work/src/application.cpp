@@ -70,10 +70,12 @@ void Application::render() {
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 	// projection matrix
-	mat4 proj = perspective(1.f, float(1280) / float(720), 0.1f, 100.f);
+	mat4 proj = perspective(1.f, float(1600) / float(900), 0.1f, 100.f);
 
 	// model matrix
 	mat4 model = glm::mat4(1.0f);
+
+	//Added wasd camera
 
     // Update camera movement
     updateCameraMovement(deltaTime);
@@ -89,6 +91,9 @@ void Application::render() {
 
     // view matrix (lookat)
     mat4 view = lookAt(m_cameraPos, m_cameraPos + front, up);
+
+
+	//end update camera
 
 	if (m_UseSkybox || m_UseSphere) {
 		// pbr
