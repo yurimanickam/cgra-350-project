@@ -51,6 +51,18 @@ Application::Application(GLFWwindow* window) : m_window(window) {
 		CGRA_SRCDIR + std::string("//res//shaders//lava_vertex.glsl"),
 		CGRA_SRCDIR + std::string("//res//shaders//lava_fragment.glsl")
 	);
+
+	float cyl_radius = 5.0f;
+	float cyl_height = 40.0f;
+	int cyl_subdiv = 48;
+	bool cyl_capped = true;
+	m_cylinderModel.shader = m_default_shader;
+	m_cylinderModel.mesh = m_station.createCylinderMesh(cyl_radius, cyl_height, cyl_subdiv, cyl_capped);
+	m_cylinderModel.color = glm::vec3(0.1f, 0.8f, 0.3f);
+	m_cylinderModel.modelTransform = glm::translate(glm::mat4(1.0f), glm::vec3(-8.0f, cyl_height / 2.0f, 0.0f));
+
+
+
 }
 
 
@@ -70,7 +82,7 @@ void Application::render() {
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 	// projection matrix
-	mat4 proj = perspective(1.f, float(1280) / float(700), 0.1f, 100.f); //keep at720p for nicer lookaround
+	mat4 proj = perspective(1.f, float(1280) / float(700), 0.1f, 1500.0f); //keep at720p for nicer lookaround
 
 	// model matrix
 	mat4 model = glm::mat4(1.0f);
@@ -156,6 +168,21 @@ void Application::render() {
 	if (m_show_axis) drawAxis(view, proj);
 	glPolygonMode(GL_FRONT_AND_BACK, (m_showWireframe) ? GL_LINE : GL_FILL);
 
+
+
+	// Draw cylinder BEFORE lava lamp to ensure proper depth ordering
+	if (m_drawCylinder) {
+		// Use default shader for cylinder to avoid environment mapping
+		glUseProgram(m_default_shader);
+
+		m_cylinderModel.draw(view, proj);
+
+		// Reset culling state
+		glCullFace(GL_BACK);
+		glDisable(GL_CULL_FACE);
+	}
+
+
 	// Render lava lamp
 	m_lavaLamp.renderLavaLamp(
 		view, proj, m_window,
@@ -165,6 +192,10 @@ void Application::render() {
 
 	// draw the original model (if desired)
 	//m_model.draw(view, proj);
+
+	//if (m_drawCylinder) {
+	//	m_cylinderModel.draw(view, proj);
+	//}
 }
 
 void Application::renderGUI() {

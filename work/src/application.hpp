@@ -90,6 +90,10 @@ private:
 	bool m_UseSkybox = true;
 	bool m_UseSphere = false;
 
+	Station m_station;               
+	basic_model m_cylinderModel;      
+	bool m_drawCylinder = true;
+
 	
 
 public:
