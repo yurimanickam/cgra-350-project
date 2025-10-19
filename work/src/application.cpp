@@ -70,7 +70,7 @@ void Application::render() {
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 	// projection matrix
-	mat4 proj = perspective(1.f, float(1600) / float(900), 0.1f, 100.f);
+	mat4 proj = perspective(1.f, float(1280) / float(700), 0.1f, 100.f); //keep at720p for nicer lookaround
 
 	// model matrix
 	mat4 model = glm::mat4(1.0f);
@@ -177,7 +177,7 @@ void Application::renderGUI() {
 	ImGui::Text("Application %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
     ImGui::SliderFloat("Pitch", &m_pitch, -pi<float>() / 2, pi<float>() / 2, "%.2f");
     ImGui::SliderFloat("Yaw", &m_yaw, -pi<float>(), pi<float>(), "%.2f");
-    ImGui::SliderFloat("Distance", &m_distance, 5, 50, "%.2f", 2.0f);
+	ImGui::SliderFloat("Camera Speed", &m_cameraSpeed, 1.0f, 50.0f, "%.2f", 2.0f);
     ImGui::Checkbox("Invert Mouse Y", &m_invertMouseY);
 
 	// helpful drawing options
@@ -268,7 +268,7 @@ void Application::mouseButtonCallback(int button, int action, int mods) {
 
 void Application::scrollCallback(double xoffset, double yoffset) {
 	(void)xoffset; // currently un-used
-	m_distance *= pow(1.1f, -yoffset);
+	m_cameraSpeed *= pow(1.1f, -yoffset);
 }
 
 void Application::keyCallback(int key, int scancode, int action, int mods) {
