@@ -43,12 +43,20 @@ struct LSystemParams {
     int seed = 12345;
 };
 
+// 3D rendering parameters
+struct Rendering3DParams {
+    float nodeRadius = 3.0f;
+    float tubeRadius = 1.5f;
+    float gapMultiplier = 1.2f; // Multiplier for node radius to determine gap
+};
+
 class Station {
 public:
     Station();
 
     // Mesh generation
     cgra::gl_mesh createCylinderMesh(float radius, float height, int subdivisions, bool capped);
+    cgra::gl_mesh createSphereMesh(float radius, int stacks, int slices);
 
     // L-System generation
     void initializeLSystem();
@@ -62,6 +70,7 @@ public:
 
     // Accessors
     LSystemParams& getParams() { return m_params; }
+    Rendering3DParams& getRenderParams() { return m_renderParams; }
     const std::vector<LSystemNode>& getNodes() const { return m_nodes; }
     const std::vector<std::pair<int, int>>& getConnections() const { return m_connections; }
     bool shouldDrawStation() const { return m_drawStation; }
@@ -80,10 +89,10 @@ private:
     bool m_drawStation = true;
 
     // 3D rendering
+    Rendering3DParams m_renderParams;
     cgra::gl_mesh m_cylinderMesh;
     cgra::gl_mesh m_nodeMesh;
-    float m_cylinderRadius = 2.0f;
-    float m_nodeRadius = 3.0f;
+    bool m_meshNeedsRebuild = true;
 
     // Turtle state for interpretation
     struct TurtleState {
@@ -116,7 +125,7 @@ private:
     void calculateBounds(glm::vec2& minBounds, glm::vec2& maxBounds) const;
 
     // 3D rendering helpers
-    void initializeMeshes();
+    void rebuildMeshes();
     glm::mat4 calculateConnectionTransform(const LSystemNode& from, const LSystemNode& to, float gapSize) const;
     glm::vec3 getModuleColor(int moduleType) const;
 };

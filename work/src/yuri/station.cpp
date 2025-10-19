@@ -28,23 +28,17 @@ namespace {
 
 Station::Station() {
     initializeLSystem();
-    initializeMeshes();
+    rebuildMeshes();
 }
 
-void Station::initializeMeshes() {
-    // Create cylinder mesh (horizontal, along X-axis)
-    m_cylinderMesh = createCylinderMesh(m_cylinderRadius, 1.0f, 16, false);
-
-    // Create sphere mesh for nodes
+cgra::gl_mesh Station::createSphereMesh(float radius, int stacks, int slices) {
     using namespace cgra;
     mesh_builder builder(GL_TRIANGLES);
-    const int stacks = 16;
-    const int slices = 16;
 
     for (int i = 0; i <= stacks; ++i) {
         const float phi = PI * float(i) / float(stacks);
-        const float y = m_nodeRadius * std::cos(phi);
-        const float radiusAtY = m_nodeRadius * std::sin(phi);
+        const float y = radius * std::cos(phi);
+        const float radiusAtY = radius * std::sin(phi);
 
         for (int j = 0; j <= slices; ++j) {
             const float theta = TWO_PI * float(j) / float(slices);
@@ -74,7 +68,17 @@ void Station::initializeMeshes() {
         }
     }
 
-    m_nodeMesh = builder.build();
+    return builder.build();
+}
+
+void Station::rebuildMeshes() {
+    // Create cylinder mesh (horizontal, along X-axis) with unit length
+    m_cylinderMesh = createCylinderMesh(m_renderParams.tubeRadius, 1.0f, 16, false);
+
+    // Create sphere mesh for nodes
+    m_nodeMesh = createSphereMesh(m_renderParams.nodeRadius, 16, 16);
+
+    m_meshNeedsRebuild = false;
 }
 
 cgra::gl_mesh Station::createCylinderMesh(float radius, float length, int subdivisions, bool capped) {
@@ -412,10 +416,15 @@ void Station::render3DStation(const glm::mat4& view, const glm::mat4& proj, GLui
         return;
     }
 
+    // Rebuild meshes if parameters changed
+    if (m_meshNeedsRebuild) {
+        rebuildMeshes();
+    }
+
     glUseProgram(shader);
     glUniformMatrix4fv(glGetUniformLocation(shader, "uProjectionMatrix"), 1, GL_FALSE, value_ptr(proj));
 
-    const float gapSize = m_nodeRadius * 1.2f; // Gap for node spheres
+    const float gapSize = m_renderParams.nodeRadius * m_renderParams.gapMultiplier;
 
     // Draw connections as cylinders
     for (const auto& conn : m_connections) {
@@ -456,7 +465,7 @@ void Station::renderGUI() {
 
 void Station::renderControlsGUI() {
     ImGui::SetNextWindowPos(ImVec2(830, 5), ImGuiSetCond_Once);
-    ImGui::SetNextWindowSize(ImVec2(450, 450), ImGuiSetCond_Once);
+    ImGui::SetNextWindowSize(ImVec2(450, 550), ImGuiSetCond_Once);
     ImGui::Begin("L-System Space Station");
 
     bool needsRegeneration = false;
@@ -464,14 +473,46 @@ void Station::renderControlsGUI() {
     ImGui::Text("3D Rendering");
     ImGui::Separator();
     ImGui::Checkbox("Draw 3D Station", &m_drawStation);
-    ImGui::SliderFloat("Cylinder Radius", &m_cylinderRadius, 0.5f, 5.0f);
-    ImGui::SliderFloat("Node Radius", &m_nodeRadius, 1.0f, 8.0f);
 
-    if (ImGui::Button("Rebuild Meshes")) {
-        initializeMeshes();
+    ImGui::Spacing();
+    ImGui::Text("3D Appearance Controls");
+
+    // Node radius slider
+    if (ImGui::SliderFloat("Node Radius", &m_renderParams.nodeRadius, 0.5f, 10.0f, "%.2f")) {
+        m_meshNeedsRebuild = true;
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Size of the spherical nodes (junctions)");
+    }
+
+    // Tube radius slider
+    if (ImGui::SliderFloat("Tube Radius", &m_renderParams.tubeRadius, 0.2f, 5.0f, "%.2f")) {
+        m_meshNeedsRebuild = true;
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Thickness of the connecting cylinders");
+    }
+
+    // Gap multiplier slider
+    if (ImGui::SliderFloat("Gap Distance", &m_renderParams.gapMultiplier, 0.5f, 2.5f, "%.2f")) {
+        // No mesh rebuild needed, just affects positioning
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Gap between tubes and nodes (multiplier of node radius)");
+    }
+
+    // Display actual gap distance
+    ImGui::Text("Actual Gap: %.2f units", m_renderParams.nodeRadius * m_renderParams.gapMultiplier);
+
+    if (ImGui::Button("Reset 3D Appearance", ImVec2(-1, 0))) {
+        m_renderParams.nodeRadius = 3.0f;
+        m_renderParams.tubeRadius = 1.5f;
+        m_renderParams.gapMultiplier = 1.2f;
+        m_meshNeedsRebuild = true;
     }
 
     ImGui::Spacing();
+    ImGui::Separator();
     ImGui::Text("Generation Parameters");
     ImGui::Separator();
 
