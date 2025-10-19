@@ -999,7 +999,6 @@ cgra::gl_mesh LavaLamp::createLampContainerMetal() {
 	return builder.build();
 }
 
-// The main rendering function, previously Application::renderLavaLamp
 void LavaLamp::renderLavaLamp(const glm::mat4& view, const glm::mat4& proj, GLFWwindow* window,
 	bool animate, bool show, float threshold,
 	float heaterTemp, float gravity)
@@ -1017,9 +1016,6 @@ void LavaLamp::renderLavaLamp(const glm::mat4& view, const glm::mat4& proj, GLFW
 	int width, height;
 	glfwGetFramebufferSize(window, &width, &height);
 
-	// Ensure depth FBO/textures exist at current size
-	ensureDepthFBO(width, height);
-
 	// Update simulation
 	if (animate) {
 		float currentTime = static_cast<float>(glfwGetTime());
@@ -1027,6 +1023,80 @@ void LavaLamp::renderLavaLamp(const glm::mat4& view, const glm::mat4& proj, GLFW
 		m_lastTime = currentTime;
 		deltaTime = std::min(deltaTime, 0.05f);
 		update(deltaTime);
+	}
+
+	// Create glass shader inline
+	static GLuint glassShader = 0;
+	if (!glassShader) {
+		const char* glassShaderSource = R"(
+#version 330 core
+uniform mat4 uProjectionMatrix;
+uniform mat4 uModelViewMatrix;
+uniform mat4 uModelMatrix;
+uniform mat4 uNormalMatrix;
+uniform vec3 uCameraPos;
+uniform vec3 uLightPos;
+uniform float uTime;
+
+#ifdef _VERTEX_
+layout(location = 0) in vec3 aPosition;
+layout(location = 1) in vec3 aNormal;
+layout(location = 2) in vec2 aTexCoord;
+
+out vec3 vWorldPos;
+out vec3 vWorldNormal;
+out vec3 vViewPos;
+out vec2 vTexCoord;
+
+void main() {
+    vec4 worldPos = uModelMatrix * vec4(aPosition, 1.0);
+    vWorldPos = worldPos.xyz;
+    vWorldNormal = normalize((uNormalMatrix * vec4(aNormal, 0.0)).xyz);
+    vViewPos = (uModelViewMatrix * vec4(aPosition, 1.0)).xyz;
+    vTexCoord = aTexCoord;
+    
+    gl_Position = uProjectionMatrix * uModelViewMatrix * vec4(aPosition, 1.0);
+}
+#endif
+
+#ifdef _FRAGMENT_
+in vec3 vWorldPos;
+in vec3 vWorldNormal;
+in vec3 vViewPos;
+in vec2 vTexCoord;
+
+out vec4 FragColor;
+
+void main() {
+    vec3 normal = normalize(vWorldNormal);
+    vec3 viewDir = normalize(uCameraPos - vWorldPos);
+    vec3 lightDir = normalize(uLightPos - vWorldPos);
+    
+    // Simple glass material
+    float fresnel = pow(1.0 - max(dot(normal, viewDir), 0.0), 2.0);
+    
+    // Glass color with slight blue tint
+    vec3 glassColor = vec3(0.9, 0.95, 1.0);
+    
+    // Simple lighting
+    float diffuse = max(dot(normal, lightDir), 0.0);
+    vec3 reflectDir = reflect(-lightDir, normal);
+    float specular = pow(max(dot(viewDir, reflectDir), 0.0), 64.0);
+    
+    vec3 color = glassColor * (0.2 + 0.3 * diffuse) + vec3(specular * 0.5);
+    
+    // Glass transparency
+    float alpha = 0.15 + fresnel * 0.25;
+    
+    FragColor = vec4(color, alpha);
+}
+#endif
+)";
+
+		cgra::shader_builder builder;
+		builder.set_shader_source(GL_VERTEX_SHADER, glassShaderSource);
+		builder.set_shader_source(GL_FRAGMENT_SHADER, glassShaderSource);
+		glassShader = builder.build();
 	}
 
 	glUseProgram(m_lavaShader);
@@ -1058,18 +1128,11 @@ void LavaLamp::renderLavaLamp(const glm::mat4& view, const glm::mat4& proj, GLFW
 	m_windowsize = vec2(width, height);
 	glUniform2fv(glGetUniformLocation(m_lavaShader, "uResolution"), 1, value_ptr(m_windowsize));
 
-	// Lamp parameters (use simulation getters so geometry + sim match)
+	// Lamp parameters
 	glUniform1f(glGetUniformLocation(m_lavaShader, "uLampRadius"), getRadius());
 	glUniform1f(glGetUniformLocation(m_lavaShader, "uLampTopRadius"), 1.0f);
 	glUniform1f(glGetUniformLocation(m_lavaShader, "uLampHeight"), getHeight());
 	glUniform1f(glGetUniformLocation(m_lavaShader, "uThreshold"), threshold);
-
-	// Radius padding (small safety margin)
-	GLint locPad = glGetUniformLocation(m_lavaShader, "uRadiusPadding");
-	if (locPad != -1) {
-		float padding = glm::max(0.02f, 0.02f * getRadius());
-		glUniform1f(locPad, padding + 0.02f);
-	}
 
 	// Lighting
 	vec3 lightPos = vec3(5.0f, 15.0f, 5.0f);
@@ -1095,33 +1158,62 @@ void LavaLamp::renderLavaLamp(const glm::mat4& view, const glm::mat4& proj, GLFW
 		glUniform3fv(glGetUniformLocation(m_lavaShader, "uBlobColors"), count, value_ptr(colors[0]));
 	}
 
-	// PASS 1: Metaball raymarching
+	// PASS 1: Render glass container geometry (back faces first for proper transparency)
 	glEnable(GL_DEPTH_TEST);
 	glDepthFunc(GL_LESS);
-	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+	glEnable(GL_CULL_FACE);
+
+	// Render back faces of glass first
+	glCullFace(GL_FRONT);
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	glDepthMask(GL_FALSE);
+
+	glUseProgram(glassShader);
+	glUniformMatrix4fv(glGetUniformLocation(glassShader, "uProjectionMatrix"), 1, GL_FALSE, value_ptr(proj));
+	glUniformMatrix4fv(glGetUniformLocation(glassShader, "uModelViewMatrix"), 1, GL_FALSE, value_ptr(modelView));
+	glUniformMatrix4fv(glGetUniformLocation(glassShader, "uModelMatrix"), 1, GL_FALSE, value_ptr(model));
+	glUniformMatrix4fv(glGetUniformLocation(glassShader, "uNormalMatrix"), 1, GL_FALSE, value_ptr(normalMatrix));
+	glUniform3fv(glGetUniformLocation(glassShader, "uCameraPos"), 1, value_ptr(cameraPos));
+	glUniform3fv(glGetUniformLocation(glassShader, "uLightPos"), 1, value_ptr(lightPos));
+	glUniform1f(glGetUniformLocation(glassShader, "uTime"), static_cast<float>(glfwGetTime()));
+
+	m_lampGlassMesh.draw();
+
+	// PASS 2: Render lava using the glass container as depth bounds
+	glUseProgram(m_lavaShader);
+	glCullFace(GL_BACK);
+	glDepthMask(GL_TRUE);
+	glDepthFunc(GL_LESS);
 
 	glUniform1i(glGetUniformLocation(m_lavaShader, "uRenderMode"), 1);
 	glUniform1i(glGetUniformLocation(m_lavaShader, "uIsFullscreenQuad"), 1);
 
-	glActiveTexture(GL_TEXTURE0);
-	glBindTexture(GL_TEXTURE_2D, 0);
-
+	// Render lava with glass bounds
 	m_fullscreenQuadMesh.draw();
 	glUniform1i(glGetUniformLocation(m_lavaShader, "uIsFullscreenQuad"), 0);
 
-	// PASS 2: Glass
-	glEnable(GL_BLEND);
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	// PASS 3: Render front faces of glass
+	glUseProgram(glassShader);
+	glCullFace(GL_BACK);  // Now render front faces
 	glDepthMask(GL_FALSE);
-	glDepthFunc(GL_LESS);
+	glDepthFunc(GL_LEQUAL);
 
-	glUniform1i(glGetUniformLocation(m_lavaShader, "uRenderMode"), 0);
+	glUniformMatrix4fv(glGetUniformLocation(glassShader, "uProjectionMatrix"), 1, GL_FALSE, value_ptr(proj));
+	glUniformMatrix4fv(glGetUniformLocation(glassShader, "uModelViewMatrix"), 1, GL_FALSE, value_ptr(modelView));
+	glUniformMatrix4fv(glGetUniformLocation(glassShader, "uModelMatrix"), 1, GL_FALSE, value_ptr(model));
+	glUniformMatrix4fv(glGetUniformLocation(glassShader, "uNormalMatrix"), 1, GL_FALSE, value_ptr(normalMatrix));
+	glUniform3fv(glGetUniformLocation(glassShader, "uCameraPos"), 1, value_ptr(cameraPos));
+	glUniform3fv(glGetUniformLocation(glassShader, "uLightPos"), 1, value_ptr(lightPos));
+	glUniform1f(glGetUniformLocation(glassShader, "uTime"), static_cast<float>(glfwGetTime()));
+
 	m_lampGlassMesh.draw();
 
-	// PASS 3: Metal with PBR
+	// PASS 4: Metal with PBR
 	glDisable(GL_BLEND);
 	glDepthMask(GL_TRUE);
 	glDepthFunc(GL_LESS);
+	glDisable(GL_CULL_FACE);
 
 	// Switch to PBR shader for metal parts
 	glUseProgram(m_pbr_shader);
@@ -1137,7 +1229,7 @@ void LavaLamp::renderLavaLamp(const glm::mat4& view, const glm::mat4& proj, GLFW
 	glActiveTexture(GL_TEXTURE2);
 	glBindTexture(GL_TEXTURE_2D, brdfLUTTexture);
 
-	// Bind gold PBR textures
+	// Bind metal PBR textures
 	bindPBRTextures(plastic);
 
 	// Set model matrix for lamp metal
@@ -1148,18 +1240,10 @@ void LavaLamp::renderLavaLamp(const glm::mat4& view, const glm::mat4& proj, GLFW
 	// Draw metal parts with PBR shader
 	m_lampMetalMesh.draw();
 
-	// Switch back to lava shader
-	glUseProgram(m_lavaShader);
-
 	// Restore state
-	glDepthMask(GL_TRUE);
-	glDepthFunc(GL_LESS);
-	glDisable(GL_BLEND);
-
 	glDepthMask(depthMask);
 	glDepthFunc(depthFunc);
-	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-
+	glDisable(GL_CULL_FACE);
 	if (!blendEnabled) {
 		glDisable(GL_BLEND);
 	}
