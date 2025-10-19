@@ -46,7 +46,7 @@ Application::Application(GLFWwindow* window) : m_window(window) {
 	m_shader = m_default_shader;
 	m_model.shader = m_shader;
 	//m_model.mesh = load_wavefront_data(CGRA_SRCDIR + std::string("/res//assets//teapot.obj")).build();
-	m_model.mesh = cgra::load_obj_data(CGRA_SRCDIR + std::string("/res/assets/armadillo.obj")).build();
+	m_model.mesh = cgra::load_obj_data(CGRA_SRCDIR + std::string("/res/assets/test.obj")).build();
 
 	m_model.color = vec3(1, 0, 0);
 
@@ -267,6 +267,8 @@ void Application::renderGUI() {
 	if (ImGui::Button("Sunset Environment")) {
 		loadPBRShaders(CGRA_SRCDIR + std::string("//res//textures//sunset.hdr"));
 	}
+
+	m_station.renderLSystemGUI();
 	ImGui::End();
 }
 
