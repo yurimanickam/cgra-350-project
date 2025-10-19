@@ -82,7 +82,7 @@ void Application::render() {
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 	// projection matrix
-	mat4 proj = perspective(1.f, float(1280) / float(700), 0.1f, 100.f); //keep at720p for nicer lookaround
+	mat4 proj = perspective(1.f, float(1280) / float(700), 0.1f, 1500.0f); //keep at720p for nicer lookaround
 
 	// model matrix
 	mat4 model = glm::mat4(1.0f);
