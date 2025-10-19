@@ -441,7 +441,7 @@ void Station::renderGUI() {
     ImGui::SetNextWindowPos(ImVec2(20, 20), ImGuiSetCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(900, 720), ImGuiSetCond_FirstUseEver);
 
-    ImGui::Begin("Space Station Generator", nullptr, ImGuiWindowFlags_NoCollapse);
+    ImGui::Begin("Space Station Generator", nullptr);
 
     // Create two columns: controls on left, preview on right
     ImGui::BeginChild("LeftPane", ImVec2(420, 0), true);
@@ -583,9 +583,9 @@ void Station::renderControlsPanel() {
         ImGui::Spacing();
 
         if (ImGui::Button("Reset 3D Settings", ImVec2(-1, 0))) {
-            m_renderParams.nodeRadius = 3.0f;
+            m_renderParams.nodeRadius = 1.0f;
             m_renderParams.tubeRadius = 1.5f;
-            m_renderParams.gapMultiplier = 1.2f;
+            m_renderParams.gapMultiplier = 0.0f;
             m_meshNeedsRebuild = true;
         }
 

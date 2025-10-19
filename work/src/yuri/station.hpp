@@ -41,9 +41,9 @@ struct LSystemParams {
 };
 
 struct Rendering3DParams {
-    float nodeRadius = 3.0f;
+    float nodeRadius = 1.0f;
     float tubeRadius = 1.5f;
-    float gapMultiplier = 1.2f;
+    float gapMultiplier = 0.0f;
 };
 
 class Station {
