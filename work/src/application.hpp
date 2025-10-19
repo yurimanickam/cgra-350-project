@@ -35,9 +35,20 @@ private:
 	GLFWwindow* m_window;
 
 	// oribital camera
-	float m_pitch = 0.86f;
-	float m_yaw = -0.86f;
+	float m_pitch = -0.5f;
+	float m_yaw = -0.0f;
 	float m_distance = 20;
+
+	// Camera movement
+	glm::vec3 m_cameraPos{0.0f, 20.0f, 20.0f};
+	float m_cameraSpeed = 10.0f;
+	bool m_invertMouseY = true;
+	bool m_moveForward = false;
+	bool m_moveBackward = false;
+	bool m_moveLeft = false;
+	bool m_moveRight = false;
+	bool m_moveUp = false;
+	bool m_moveDown = false;
 
 	// last input
 	bool m_leftMouseDown = false;
@@ -80,9 +91,11 @@ private:
 	bool m_UseSphere = false;
 
 	
+
 public:
 	// setup
 	Application(GLFWwindow*);
+	void updateCameraMovement(float deltaTime);
 
 	// disable copy constructors (for safety)
 	Application(const Application&) = delete;
