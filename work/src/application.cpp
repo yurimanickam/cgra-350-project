@@ -329,10 +329,8 @@ void Application::renderGUI() {
 	}
 
 
-	//USE FOR STATION UI
 	m_station.renderGUI();
-	// In Application::renderGUI(), after calling m_station.renderGUI();
-// Add this to sync Station's model button with Application's m_show_model flag:
+
 	m_show_model = m_station.getShowModelButton();
 	ImGui::End();
 }
