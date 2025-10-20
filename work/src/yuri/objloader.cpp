@@ -18,7 +18,6 @@ namespace cgra {
         m_normals.reserve(10000);
         m_texCoords.reserve(10000);
         m_vertices.reserve(10000);
-        m_indices.reserve(30000);
     }
 
     OBJLoader::~OBJLoader() {
@@ -38,8 +37,15 @@ namespace cgra {
 
         clear(); // Clear any existing data
 
+        // Extract path for loading related files like MTL
+        size_t last_slash = filename.find_last_of("/\\");
+        m_basePath = (last_slash == std::string::npos) ? "" : filename.substr(0, last_slash + 1);
+
+
         std::string line;
         size_t lineNumber = 0;
+
+        m_faceGroups.push_back({ "default", {} }); // Start with a default material group
 
         while (std::getline(file, line)) {
             lineNumber++;
@@ -57,7 +63,13 @@ namespace cgra {
 
             try {
                 // Parse based on the first token
-                if (line.substr(0, 2) == "v ") {
+                if (line.substr(0, 7) == "mtllib ") {
+                    parseMtllib(line);
+                }
+                else if (line.substr(0, 7) == "usemtl ") {
+                    parseUsemtl(line);
+                }
+                else if (line.substr(0, 2) == "v ") {
                     parseVertexPosition(line);
                 }
                 else if (line.substr(0, 3) == "vn ") {
@@ -69,7 +81,7 @@ namespace cgra {
                 else if (line.substr(0, 2) == "f ") {
                     parseFace(line);
                 }
-                // Ignore other tokens (g, o, mtllib, usemtl, s, etc.)
+                // Ignore other tokens (g, o, s, etc.)
             }
             catch (const std::exception& e) {
                 std::cerr << "Error parsing line " << lineNumber << ": " << e.what() << std::endl;
@@ -140,6 +152,67 @@ namespace cgra {
 
         m_texCoords.push_back(texCoord);
     }
+
+    void OBJLoader::parseMtllib(const std::string& line) {
+        std::istringstream iss(line.substr(7));
+        std::string mtl_filename;
+        iss >> mtl_filename;
+        processMtlFile(m_basePath + mtl_filename);
+    }
+
+    void OBJLoader::parseUsemtl(const std::string& line) {
+        std::istringstream iss(line.substr(7));
+        std::string material_name;
+        iss >> material_name;
+
+        if (m_currentMaterial != material_name) {
+            m_currentMaterial = material_name;
+
+            // Check if this material group already exists
+            bool found = false;
+            for (const auto& group : m_faceGroups) {
+                if (group.material_name == material_name) {
+                    found = true;
+                    break;
+                }
+            }
+            // If not, create a new group for it
+            if (!found) {
+                m_faceGroups.push_back({ material_name, {} });
+            }
+        }
+    }
+
+    void OBJLoader::processMtlFile(const std::string& mtl_filename) {
+        std::ifstream file(mtl_filename);
+        if (!file.is_open()) {
+            std::cerr << "Error: Could not open MTL file: " << mtl_filename << std::endl;
+            return;
+        }
+        std::cout << "Loading MTL file: " << mtl_filename << std::endl;
+
+        std::string line;
+        while (std::getline(file, line)) {
+            // Trim and skip comments/empty lines
+            if (line.empty() || line[0] == '#') continue;
+            line.erase(0, line.find_first_not_of(" \t"));
+            line.erase(line.find_last_not_of(" \t") + 1);
+            if (line.empty()) continue;
+
+            std::istringstream iss(line);
+            std::string token;
+            iss >> token;
+
+            if (token == "newmtl") {
+                std::string material_name;
+                iss >> material_name;
+                if (std::find(m_materialNames.begin(), m_materialNames.end(), material_name) == m_materialNames.end()) {
+                    m_materialNames.push_back(material_name);
+                }
+            }
+        }
+    }
+
 
     void OBJLoader::parseFace(const std::string& line) {
         std::istringstream iss(line.substr(2)); // Skip "f "
@@ -212,12 +285,25 @@ namespace cgra {
             faceIndices.push_back(vertexIndex);
         }
 
-        // Triangulate the face (assumes convex faces)
+        // Triangulate the face (assumes convex faces) and add to current material group
         if (faceIndices.size() >= 3) {
+            // Find the current group
+            FaceGroup* currentGroup = nullptr;
+            for (auto& group : m_faceGroups) {
+                if (group.material_name == m_currentMaterial) {
+                    currentGroup = &group;
+                    break;
+                }
+            }
+            if (!currentGroup) { // Should not happen if usemtl is handled correctly
+                m_faceGroups.push_back({ m_currentMaterial, {} });
+                currentGroup = &m_faceGroups.back();
+            }
+
             for (size_t i = 1; i < faceIndices.size() - 1; i++) {
-                m_indices.push_back(faceIndices[0]);
-                m_indices.push_back(faceIndices[i]);
-                m_indices.push_back(faceIndices[i + 1]);
+                currentGroup->indices.push_back(faceIndices[0]);
+                currentGroup->indices.push_back(faceIndices[i]);
+                currentGroup->indices.push_back(faceIndices[i + 1]);
             }
         }
     }
@@ -243,25 +329,27 @@ namespace cgra {
         m_normals.resize(m_positions.size(), glm::vec3(0.0f));
 
         // Calculate face normals and accumulate to vertex normals
-        for (size_t i = 0; i < m_indices.size(); i += 3) {
-            unsigned int i0 = m_indices[i];
-            unsigned int i1 = m_indices[i + 1];
-            unsigned int i2 = m_indices[i + 2];
+        for (const auto& group : m_faceGroups) {
+            for (size_t i = 0; i < group.indices.size(); i += 3) {
+                unsigned int i0 = group.indices[i];
+                unsigned int i1 = group.indices[i + 1];
+                unsigned int i2 = group.indices[i + 2];
 
-            if (i0 >= m_vertices.size() || i1 >= m_vertices.size() || i2 >= m_vertices.size()) {
-                continue; // Skip invalid triangles
+                if (i0 >= m_vertices.size() || i1 >= m_vertices.size() || i2 >= m_vertices.size()) {
+                    continue; // Skip invalid triangles
+                }
+
+                glm::vec3 v0 = m_vertices[i0].pos;
+                glm::vec3 v1 = m_vertices[i1].pos;
+                glm::vec3 v2 = m_vertices[i2].pos;
+
+                glm::vec3 faceNormal = glm::normalize(glm::cross(v1 - v0, v2 - v0));
+
+                // Accumulate face normal to vertex normals
+                m_vertices[i0].norm += faceNormal;
+                m_vertices[i1].norm += faceNormal;
+                m_vertices[i2].norm += faceNormal;
             }
-
-            glm::vec3 v0 = m_vertices[i0].pos;
-            glm::vec3 v1 = m_vertices[i1].pos;
-            glm::vec3 v2 = m_vertices[i2].pos;
-
-            glm::vec3 faceNormal = glm::normalize(glm::cross(v1 - v0, v2 - v0));
-
-            // Accumulate face normal to vertex normals
-            m_vertices[i0].norm += faceNormal;
-            m_vertices[i1].norm += faceNormal;
-            m_vertices[i2].norm += faceNormal;
         }
 
         // Normalize all vertex normals
@@ -299,6 +387,7 @@ namespace cgra {
         std::cout << "Texture Coordinates: " << m_texCoords.size() << std::endl;
         std::cout << "Triangles: " << getTriangleCount() << std::endl;
         std::cout << "Final Vertices: " << getVertexCount() << std::endl;
+        std::cout << "Materials Found: " << m_materialNames.size() << std::endl;
         std::cout << "Vertex Deduplication Ratio: " <<
             (m_originalVertexCount > 0 ?
                 (1.0f - float(m_optimizedVertexCount) / float(m_originalVertexCount)) * 100.0f : 0.0f)
@@ -306,42 +395,66 @@ namespace cgra {
         std::cout << "===============================" << std::endl;
     }
 
-    mesh_builder OBJLoader::buildMesh() const {
-        mesh_builder builder;
-
-        // Copy vertices
-        for (const auto& vertex : m_vertices) {
-            builder.push_vertex(vertex);
+    size_t OBJLoader::getTriangleCount() const {
+        size_t count = 0;
+        for (const auto& group : m_faceGroups) {
+            count += group.indices.size();
         }
-
-        // Copy indices
-        for (unsigned int index : m_indices) {
-            builder.push_index(index);
-        }
-
-        return builder;
+        return count / 3;
     }
+
+    multi_mesh_model OBJLoader::buildMultiMeshModel() const {
+        multi_mesh_model model;
+        model.material_names = m_materialNames;
+
+        mesh_builder shared_vertex_builder;
+        for (const auto& vertex : m_vertices) {
+            shared_vertex_builder.push_vertex(vertex);
+        }
+
+        for (const auto& group : m_faceGroups) {
+            if (group.indices.empty()) {
+                continue;
+            }
+
+            mesh_builder group_builder = shared_vertex_builder;
+            for (unsigned int index : group.indices) {
+                group_builder.push_index(index);
+            }
+
+            mesh_group mg;
+            mg.material_name = group.material_name;
+            mg.mesh = group_builder.build();
+            model.mesh_groups.push_back(mg);
+        }
+
+        return model;
+    }
+
 
     void OBJLoader::clear() {
         m_positions.clear();
         m_normals.clear();
         m_texCoords.clear();
         m_vertices.clear();
-        m_indices.clear();
         m_vertexMap.clear();
+        m_faceGroups.clear();
+        m_materialNames.clear();
+        m_currentMaterial = "";
+        m_basePath = "";
         m_originalVertexCount = 0;
         m_optimizedVertexCount = 0;
     }
 
     // Convenience function
-    mesh_builder load_obj_data(const std::string& filename) {
+    multi_mesh_model load_multi_mesh_model(const std::string& filename) {
         OBJLoader loader;
         if (loader.loadFromFile(filename)) {
-            return loader.buildMesh();
+            return loader.buildMultiMeshModel();
         }
         else {
             std::cerr << "Failed to load OBJ file: " << filename << std::endl;
-            return mesh_builder(); // Return empty mesh builder
+            return multi_mesh_model(); // Return empty model
         }
     }
 }

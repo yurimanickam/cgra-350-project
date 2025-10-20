@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <map>
 
 // glm
 #include <glm/glm.hpp>
@@ -12,6 +13,24 @@
 #include "cgra/cgra_mesh.hpp"
 
 namespace cgra {
+
+    // Represents a part of a mesh that uses a single material
+    struct mesh_group {
+        std::string material_name;
+        cgra::gl_mesh mesh;
+    };
+
+    // A model composed of multiple mesh groups
+    struct multi_mesh_model {
+        std::vector<mesh_group> mesh_groups;
+        std::vector<std::string> material_names; // All unique materials found
+
+        void destroy() {
+            for (auto& group : mesh_groups) {
+                group.mesh.destroy();
+            }
+        }
+    };
 
     // Enhanced OBJ loader with better memory management and robustness
     class OBJLoader {
@@ -55,10 +74,18 @@ namespace cgra {
 
         // Processed data for mesh building
         std::vector<mesh_vertex> m_vertices;
-        std::vector<unsigned int> m_indices;
-
-        // For vertex deduplication
         std::unordered_map<ParsedVertex, unsigned int, ParsedVertexHash> m_vertexMap;
+
+        // Grouping by material
+        struct FaceGroup {
+            std::string material_name;
+            std::vector<unsigned int> indices;
+        };
+        std::vector<FaceGroup> m_faceGroups;
+        std::string m_currentMaterial;
+        std::vector<std::string> m_materialNames;
+        std::string m_basePath;
+
 
         // Statistics
         size_t m_originalVertexCount;
@@ -69,6 +96,9 @@ namespace cgra {
         void parseVertexNormal(const std::string& line);
         void parseTextureCoord(const std::string& line);
         void parseFace(const std::string& line);
+        void parseMtllib(const std::string& line);
+        void parseUsemtl(const std::string& line);
+        void processMtlFile(const std::string& mtl_filename);
         void generateNormalsIfMissing();
         void generateDefaultTexCoords();
         unsigned int addVertex(const ParsedVertex& vertex);
@@ -82,11 +112,11 @@ namespace cgra {
         // Main loading function
         bool loadFromFile(const std::string& filename);
 
-        // Build the final mesh
-        mesh_builder buildMesh() const;
+        // Build the final multi-mesh model
+        multi_mesh_model buildMultiMeshModel() const;
 
         // Get statistics
-        size_t getTriangleCount() const { return m_indices.size() / 3; }
+        size_t getTriangleCount() const;
         size_t getVertexCount() const { return m_vertices.size(); }
         size_t getOriginalVertexCount() const { return m_originalVertexCount; }
 
@@ -94,6 +124,6 @@ namespace cgra {
         void clear();
     };
 
-    // Convenience function that works like the original load_wavefront_data
-    mesh_builder load_obj_data(const std::string& filename);
+    // Convenience function to load a multi-mesh model
+    multi_mesh_model load_multi_mesh_model(const std::string& filename);
 }

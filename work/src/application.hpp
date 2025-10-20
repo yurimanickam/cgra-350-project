@@ -4,9 +4,15 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
+// std
+#include <map>
+#include <vector>
+#include <string>
+
 // project
 #include "opengl.hpp"
 #include "cgra/cgra_mesh.hpp"
+#include "yuri/objloader.hpp"
 
 //teammate includes
 #include "david/lava_lamp.hpp"
@@ -26,6 +32,12 @@ struct basic_model {
 	void draw(const glm::mat4& view, const glm::mat4 proj);
 };
 
+// PBR material structure - simple wrapper around the PBR material indices
+struct pbr_material_wrapper {
+	int material_index; // Index into available materials (0=gold, 1=plastic, 2=cloth, etc.)
+	std::string name;
+};
+
 // Main application class
 //
 class Application {
@@ -40,7 +52,7 @@ private:
 	float m_distance = 20;
 
 	// Camera movement
-	glm::vec3 m_cameraPos{0.0f, 20.0f, 20.0f};
+	glm::vec3 m_cameraPos{ 0.0f, 20.0f, 20.0f };
 	float m_cameraSpeed = 10.0f;
 	bool m_invertMouseY = true;
 	bool m_moveForward = false;
@@ -58,8 +70,15 @@ private:
 	bool m_show_axis = false;
 	bool m_show_grid = false;
 	bool m_showWireframe = false;
+	bool m_show_model = true;
 
-	// geometry
+
+	// geometry - modified to support multi-material model
+	cgra::multi_mesh_model m_multiModel;
+	std::map<std::string, pbr_material_wrapper> m_material_assignments;
+	bool m_useMultiMaterial = true;
+
+	// Keep the old single model for compatibility
 	basic_model m_model;
 
 	// Lava lamp components
@@ -90,11 +109,12 @@ private:
 	bool m_UseSkybox = true;
 	bool m_UseSphere = false;
 
-	Station m_station;               
-	basic_model m_cylinderModel;      
+	Station m_station;
+	basic_model m_cylinderModel;
 	bool m_drawCylinder = true;
 
-	
+	void assignRandomPBRMaterials();
+	void bindPBRMaterialByIndex(int materialIndex);
 
 public:
 	// setup
