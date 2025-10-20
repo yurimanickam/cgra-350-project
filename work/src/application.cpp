@@ -3,6 +3,8 @@
 #include <string>
 #include <chrono>
 #include <algorithm>
+#include <random>
+#include <map>
 
 // glm
 #include <glm/gtc/constants.hpp>
@@ -66,6 +68,43 @@ Application::Application(GLFWwindow* window) : m_window(window) {
 	m_station.initializeLSystem();
 }
 
+void Application::assignRandomPBRMaterials() {
+	// Available material indices (corresponding to the materials in matt/pbr.hpp)
+	std::vector<int> availableMaterials = { 0, 1, 2 }; // 0=gold, 1=plastic, 2=cloth - extend as needed
+
+	std::random_device rd;
+	std::mt19937 gen(rd());
+	std::uniform_int_distribution<> distrib(0, availableMaterials.size() - 1);
+
+	// Assign random materials to each material group
+	for (const auto& group : m_multiModel.mesh_groups) {
+		int randomMaterialIndex = availableMaterials[distrib(gen)];
+		pbr_material_wrapper wrapper;
+		wrapper.material_index = randomMaterialIndex;
+		wrapper.name = group.material_name;
+
+		m_material_assignments[group.material_name] = wrapper;
+
+		std::cout << "Assigned material " << randomMaterialIndex << " to '" << group.material_name << "'" << std::endl;
+	}
+}
+
+void Application::bindPBRMaterialByIndex(int materialIndex) {
+	switch (materialIndex) {
+	case 0:
+		bindPBRTextures(gold);
+		break;
+	case 1:
+		bindPBRTextures(plastic);
+		break;
+	case 2:
+		bindPBRTextures(cloth);
+		break;
+	default:
+		bindPBRTextures(plastic); // fallback
+		break;
+	}
+}
 
 void Application::render() {
 	// retrieve the window hieght
@@ -105,15 +144,15 @@ void Application::render() {
 	// view matrix (lookat)
 	mat4 view = lookAt(m_cameraPos, m_cameraPos + front, up);
 
-
 	//end update camera
 
-	if (m_UseSkybox || m_UseSphere) {
+	// Setup PBR rendering if we're using multi-material or showing spheres/skybox
+	if (m_UseSkybox || m_UseSphere || (m_useMultiMaterial && m_show_model)) {
 		// pbr
 		glUseProgram(m_pbr_shader);
 		glUniformMatrix4fv(glGetUniformLocation(m_pbr_shader, "projection"), 1, GL_FALSE, value_ptr(proj));
 		glUniformMatrix4fv(glGetUniformLocation(m_pbr_shader, "view"), 1, GL_FALSE, value_ptr(view));
-		glUniform3fv(glGetUniformLocation(m_pbr_shader, "camPos"), 1, value_ptr(vec3(inverse(view) * vec4(0, 0, 0, 1))));
+		glUniform3fv(glGetUniformLocation(m_pbr_shader, "camPos"), 1, value_ptr(m_cameraPos));
 
 		// bind pre-computed IBL data
 		glActiveTexture(GL_TEXTURE0);
@@ -154,11 +193,36 @@ void Application::render() {
 		glUniformMatrix3fv(glGetUniformLocation(m_pbr_shader, "normalMatrix"), 1, GL_FALSE, value_ptr(glm::transpose(glm::inverse(glm::mat3(model)))));
 		renderSphere();
 	}
+
+	// Draw the multi-material model with PBR materials
+	if (m_show_model && m_useMultiMaterial && !m_multiModel.mesh_groups.empty()) {
+		glUseProgram(m_pbr_shader);
+		model = glm::mat4(1.0f);
+		glUniformMatrix4fv(glGetUniformLocation(m_pbr_shader, "model"), 1, GL_FALSE, value_ptr(model));
+		glUniformMatrix3fv(glGetUniformLocation(m_pbr_shader, "normalMatrix"), 1, GL_FALSE, value_ptr(glm::transpose(glm::inverse(glm::mat3(model)))));
+
+		for (auto& group : m_multiModel.mesh_groups) {
+			// Find the assigned material for this group
+			auto it = m_material_assignments.find(group.material_name);
+			if (it != m_material_assignments.end()) {
+				bindPBRMaterialByIndex(it->second.material_index);
+			}
+			else {
+				// Fallback to plastic if no assignment found
+				bindPBRTextures(plastic);
+			}
+
+			// Draw this material group
+			group.mesh.draw();
+		}
+	}
+
 	if (m_UseSkybox) {
 		// render skybox
 		glUseProgram(m_background_shader);
 		mat4 viewSkybox = mat4(mat3(view));
 		glUniformMatrix4fv(glGetUniformLocation(m_background_shader, "view"), 1, GL_FALSE, value_ptr(viewSkybox));
+		glUniformMatrix4fv(glGetUniformLocation(m_background_shader, "projection"), 1, GL_FALSE, value_ptr(proj));
 		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(GL_TEXTURE_CUBE_MAP, envCubemap);
 		renderCube();
@@ -200,6 +264,21 @@ void Application::renderGUI() {
 	ImGui::Checkbox("Wireframe", &m_showWireframe);
 	ImGui::SameLine();
 	if (ImGui::Button("Screenshot")) rgba_image::screenshot(true);
+
+	ImGui::Separator();
+	ImGui::Text("Model Controls");
+	ImGui::Checkbox("Show Model", &m_show_model);
+
+	if (m_useMultiMaterial) {
+		ImGui::Text("Multi-material model loaded");
+		ImGui::Text("Material groups: %d", (int)m_multiModel.mesh_groups.size());
+		if (ImGui::Button("Re-assign Random Materials")) {
+			assignRandomPBRMaterials();
+		}
+	}
+	else {
+		ImGui::Text("Single material model (fallback)");
+	}
 
 	ImGui::Separator();
 	ImGui::Text("Lava Lamp Controls");
@@ -323,5 +402,4 @@ void Application::updateCameraMovement(float deltaTime) {
 	if (m_moveRight)    m_cameraPos += right * velocity;
 	if (m_moveUp)       m_cameraPos += up * velocity;
 	if (m_moveDown)     m_cameraPos -= up * velocity;
-
 }
