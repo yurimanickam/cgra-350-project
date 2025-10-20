@@ -26,6 +26,10 @@ cd build
 # Generate build files using CMake
 cmake ../work
 
+# GLU.h might be needed on linux
+sudo apt-get install libglu1-mesa-dev
+sudo pacman -S glu
+
 ```
 ## UI Controls
 
