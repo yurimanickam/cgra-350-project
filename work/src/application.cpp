@@ -221,7 +221,7 @@ void Application::renderGUI() {
 	// In Application::renderGUI(), replace the Space Station section
 	ImGui::End();
 
-	ImGui::SetNextWindowPos(ImVec2(410, 5), ImGuiSetCond_Once);
+	ImGui::SetNextWindowPos(ImVec2(5, 360), ImGuiSetCond_Once);
 	ImGui::SetNextWindowSize(ImVec2(400, 200), ImGuiSetCond_Once);
 	ImGui::Begin("PBR Controls", 0);
 
