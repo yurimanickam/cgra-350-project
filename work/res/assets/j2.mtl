@@ -1,0 +1,67 @@
+# Blender 4.5.1 LTS MTL File: 'Space Station.blend'
+# www.blender.org
+
+newmtl Gold_Ore
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 2
+map_Kd C:/Gold Ore_BaseColor.jpg
+map_Ns C:/Gold Ore_Roughness.jpg
+map_refl C:/Gold Ore_Metallic.jpg
+map_d C:/Gold Ore_Alpha.jpg
+map_Bump -bm 3.000000 C:/Gold Ore_Normal.jpg
+
+newmtl Material.067
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Kd 1.000000 0.000000 0.000727
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+
+newmtl Material.069
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Kd 0.000000 0.000000 0.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+
+newmtl Material.070
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Kd 0.137406 0.137406 0.137406
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+
+newmtl Sci-Fi_Module
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 2
+map_Kd C:/SciFi-Tile1_diffuse.jpg
+map_Ns C:/SciFi-Tile1_roughness.jpg
+map_Bump -bm 1.000000 C:/SciFi-Tile1_normal.jpg
+
+newmtl Sci-Fi_Module_type4
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 2
+map_Kd C:/SciFi-Tile4_diffuse.jpg
+map_Ns C:/SciFi-Tile4_roughness.jpg
+map_refl C:/SciFi-Tile4_metallic.jpg
+map_Bump -bm 1.000000 C:/SciFi-Tile4_normal.jpg
