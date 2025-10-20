@@ -46,7 +46,7 @@ Application::Application(GLFWwindow* window) : m_window(window) {
 	m_shader = m_default_shader;
 	m_model.shader = m_shader;
 	//m_model.mesh = load_wavefront_data(CGRA_SRCDIR + std::string("/res//assets//teapot.obj")).build();
-	m_model.mesh = cgra::load_obj_data(CGRA_SRCDIR + std::string("/res/assets/test.obj")).build();
+	m_model.mesh = cgra::load_obj_data(CGRA_SRCDIR + std::string("/res/assets/OpenModule.obj")).build();
 
 	m_model.color = vec3(1, 0, 0);
 
@@ -195,7 +195,7 @@ void Application::render() {
 	);
 
 	// draw the original model (if desired)
-	//m_model.draw(view, proj);
+	m_model.draw(view, proj);
 }
 
 void Application::renderGUI() {
