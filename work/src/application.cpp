@@ -48,22 +48,6 @@ Application::Application(GLFWwindow* window) : m_window(window) {
 	m_shader = m_default_shader;
 	m_model.shader = m_shader;
 
-	// Try to load multi-material model first
-	m_multiModel = load_multi_mesh_model(CGRA_SRCDIR + std::string("/res/assets/OpenModule.obj"));
-
-	// If multi-material model loaded successfully, assign random materials
-	if (!m_multiModel.mesh_groups.empty()) {
-		m_useMultiMaterial = true;
-		assignRandomPBRMaterials();
-		std::cout << "Loaded multi-material model with " << m_multiModel.mesh_groups.size() << " material groups" << std::endl;
-	}
-	else {
-		// Fallback to single material model
-		m_useMultiMaterial = false;
-		//m_model.mesh = load_obj_data(CGRA_SRCDIR + std::string("/res/assets/OpenModule.obj")).build();
-		std::cout << "Loaded single material model as fallback" << std::endl;
-	}
-
 	m_model.color = vec3(1, 0, 0);
 
 	// Initialize lava lamp using new LavaLamp API
@@ -258,11 +242,6 @@ void Application::render() {
 		m_animateLamp, m_showLavaLamp, m_threshold,
 		m_heaterTemp, m_gravity
 	);
-
-	// draw the original model (if not using multi-material or as fallback)
-	if (m_show_model && !m_useMultiMaterial) {
-		m_model.draw(view, proj);
-	}
 }
 
 void Application::renderGUI() {
@@ -321,7 +300,7 @@ void Application::renderGUI() {
 	// In Application::renderGUI(), replace the Space Station section
 	ImGui::End();
 
-	ImGui::SetNextWindowPos(ImVec2(410, 5), ImGuiSetCond_Once);
+	ImGui::SetNextWindowPos(ImVec2(5, 360), ImGuiSetCond_Once);
 	ImGui::SetNextWindowSize(ImVec2(400, 200), ImGuiSetCond_Once);
 	ImGui::Begin("PBR Controls", 0);
 
