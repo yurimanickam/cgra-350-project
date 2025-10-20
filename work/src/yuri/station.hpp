@@ -1,4 +1,3 @@
-
 #pragma once
 
 #include <cgra/cgra_mesh.hpp>
@@ -6,6 +5,7 @@
 #include <string>
 #include <vector>
 #include <random>
+#include <functional>
 
 // A Module is a functional segment of the station (rendered as a tube/cylinder)
 struct StationModule {
@@ -95,6 +95,13 @@ public:
     const std::vector<ModuleJunction>& getJunctions() const { return m_junctions; }
     bool shouldDrawStation() const { return m_drawStation; }
 
+    // Callback setters for model loading and material assignment
+    void setReassignMaterialsCallback(std::function<void()> callback) {
+        m_reassignMaterialsCallback = callback;
+    }
+    bool getShowModelButton() const { return m_showModelButton; }
+    void setShowModelButton(bool val) { m_showModelButton = val; }
+
 private:
     // L-System data
     LSystemParams m_params;
@@ -114,6 +121,9 @@ private:
     cgra::gl_mesh m_moduleMesh;      // Cylinder mesh for modules
     cgra::gl_mesh m_junctionMesh;    // Sphere mesh for junctions
     bool m_meshNeedsRebuild = true;
+
+    // Callbacks
+    std::function<void()> m_reassignMaterialsCallback;
 
     // Turtle state
     struct TurtleState {
@@ -156,4 +166,8 @@ private:
     void rebuildMeshes();
     glm::mat4 calculateModuleTransform(const StationModule& module, float gapSize) const;
     glm::vec3 getModuleColor(int moduleType) const;
+
+    bool m_showModelButton = false; // default: show model
+
+
 };

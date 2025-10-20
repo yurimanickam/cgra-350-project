@@ -739,6 +739,33 @@ void Station::renderControlsPanel() {
         ImGui::Spacing();
     }
 
+    // === MODEL MATERIALS === (NEW SECTION)
+    if (ImGui::CollapsingHeader("Model Materials", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::Spacing();
+
+        ImGui::TextWrapped("Randomize the PBR materials assigned to the multi-material model.");
+
+        ImGui::Spacing();
+        ImGui::Checkbox("Show Multi-Material Model", &m_showModelButton);
+
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.7f, 0.3f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.8f, 0.4f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.15f, 0.6f, 0.25f, 1.0f));
+
+        if (ImGui::Button("Re-assign Random Materials", ImVec2(-1, 30))) {
+            if (m_reassignMaterialsCallback) {
+                m_reassignMaterialsCallback();
+            }
+        }
+        ImGui::PopStyleColor(3);
+
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Randomly assigns new PBR materials to all model parts");
+        }
+
+        ImGui::Spacing();
+    }
+
     // === RANDOM SEED ===
     if (ImGui::CollapsingHeader("Random Seed", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::Spacing();
@@ -762,12 +789,12 @@ void Station::renderControlsPanel() {
     ImGui::Separator();
     ImGui::Spacing();
 
-    ImGui::PushStyleColor(ImGuiCol_Button, COLOR_ACTIVE);
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, COLOR_HOVER);
-    if (ImGui::Button("GENERATE STATION", ImVec2(-1, 40))) {
-        needsRegeneration = true;
-    }
-    ImGui::PopStyleColor(2);
+    //ImGui::PushStyleColor(ImGuiCol_Button, COLOR_ACTIVE);
+    //ImGui::PushStyleColor(ImGuiCol_ButtonHovered, COLOR_HOVER);
+    //if (ImGui::Button("GENERATE STATION", ImVec2(-1, 40))) {
+    //    needsRegeneration = true;
+    //}
+    //ImGui::PopStyleColor(2);
 
     ImGui::Spacing();
     ImGui::Separator();

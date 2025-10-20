@@ -48,6 +48,18 @@ Application::Application(GLFWwindow* window) : m_window(window) {
 	m_shader = m_default_shader;
 	m_model.shader = m_shader;
 
+	m_multiModel = load_multi_mesh_model(CGRA_SRCDIR + std::string("/res/assets/OpenModule.obj"));
+
+	if (!m_multiModel.mesh_groups.empty()) {
+		m_useMultiMaterial = true;
+		assignRandomPBRMaterials();
+		std::cout << "Loaded multi-material model with " << m_multiModel.mesh_groups.size() << " material groups" << std::endl;
+	}
+	else {
+		m_useMultiMaterial = false;
+		std::cout << "Loaded single material model as fallback" << std::endl;
+	}
+
 	m_model.color = vec3(1, 0, 0);
 
 	// Initialize lava lamp using new LavaLamp API
@@ -66,6 +78,11 @@ Application::Application(GLFWwindow* window) : m_window(window) {
 	m_cylinderModel.modelTransform = glm::translate(glm::mat4(1.0f), glm::vec3(-8.0f, cyl_height / 2.0f, 0.0f));
 
 	m_station.initializeLSystem();
+
+	// Set up the callback for reassigning materials from the station GUI
+	m_station.setReassignMaterialsCallback([this]() {
+		this->assignRandomPBRMaterials();
+		});
 }
 
 void Application::assignRandomPBRMaterials() {
@@ -146,7 +163,6 @@ void Application::render() {
 
 	//end update camera
 
-	// Setup PBR rendering if we're using multi-material or showing spheres/skybox
 	if (m_UseSkybox || m_UseSphere || (m_useMultiMaterial && m_show_model)) {
 		// pbr
 		glUseProgram(m_pbr_shader);
@@ -265,20 +281,7 @@ void Application::renderGUI() {
 	ImGui::SameLine();
 	if (ImGui::Button("Screenshot")) rgba_image::screenshot(true);
 
-	ImGui::Separator();
-	ImGui::Text("Model Controls");
-	ImGui::Checkbox("Show Model", &m_show_model);
 
-	if (m_useMultiMaterial) {
-		ImGui::Text("Multi-material model loaded");
-		ImGui::Text("Material groups: %d", (int)m_multiModel.mesh_groups.size());
-		if (ImGui::Button("Re-assign Random Materials")) {
-			assignRandomPBRMaterials();
-		}
-	}
-	else {
-		ImGui::Text("Single material model (fallback)");
-	}
 
 	ImGui::Separator();
 	ImGui::Text("Lava Lamp Controls");
@@ -328,6 +331,9 @@ void Application::renderGUI() {
 
 	//USE FOR STATION UI
 	m_station.renderGUI();
+	// In Application::renderGUI(), after calling m_station.renderGUI();
+// Add this to sync Station's model button with Application's m_show_model flag:
+	m_show_model = m_station.getShowModelButton();
 	ImGui::End();
 }
 
@@ -403,3 +409,6 @@ void Application::updateCameraMovement(float deltaTime) {
 	if (m_moveUp)       m_cameraPos += up * velocity;
 	if (m_moveDown)     m_cameraPos -= up * velocity;
 }
+
+
+
