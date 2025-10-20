@@ -83,11 +83,11 @@ private:
 	float m_gravity = -9.8f;
 	float m_viscosity = 0.3f;
 	float m_threshold = 0.2f;
-	bool m_showLavaLamp = true;
-	bool m_animateLamp = true;
+	bool m_showLavaLamp = false;
+	bool m_animateLamp = false;
 
 
-	bool m_UseSkybox = true;
+	bool m_UseSkybox = false;
 	bool m_UseSphere = false;
 
 	Station m_station;               

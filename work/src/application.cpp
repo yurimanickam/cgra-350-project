@@ -45,8 +45,6 @@ Application::Application(GLFWwindow* window) : m_window(window) {
 
 	m_shader = m_default_shader;
 	m_model.shader = m_shader;
-	//m_model.mesh = load_wavefront_data(CGRA_SRCDIR + std::string("/res//assets//teapot.obj")).build();
-	m_model.mesh = cgra::load_obj_data(CGRA_SRCDIR + std::string("/res/assets/test.obj")).build();
 
 	m_model.color = vec3(1, 0, 0);
 
@@ -174,28 +172,12 @@ void Application::render() {
 	// Draw the L-System space station in 3D
 	m_station.render3DStation(view, proj, m_default_shader);
 
-	// Draw cylinder BEFORE lava lamp to ensure proper depth ordering
-	//if (m_drawCylinder) {
-	//	// Use default shader for cylinder to avoid environment mapping
-	//	glUseProgram(m_default_shader);
-
-	//	m_cylinderModel.draw(view, proj);
-
-	//	// Reset culling state
-	//	glCullFace(GL_BACK);
-	//	glDisable(GL_CULL_FACE);
-	//}
-
-
 	// Render lava lamp
 	m_lavaLamp.renderLavaLamp(
 		view, proj, m_window,
 		m_animateLamp, m_showLavaLamp, m_threshold,
 		m_heaterTemp, m_gravity
 	);
-
-	// draw the original model (if desired)
-	//m_model.draw(view, proj);
 }
 
 void Application::renderGUI() {

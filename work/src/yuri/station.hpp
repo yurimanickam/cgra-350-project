@@ -107,7 +107,7 @@ private:
     // Visualization
     float m_previewZoom = 1.0f;
     glm::vec2 m_previewPan = glm::vec2(0.0f);
-    bool m_drawStation = true;
+    bool m_drawStation = false;
 
     // 3D rendering
     Rendering3DParams m_renderParams;
