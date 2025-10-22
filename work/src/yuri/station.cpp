@@ -7,6 +7,10 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <imgui.h>
+#include <iostream>
+
+#include "yuri/objloader.hpp"
+#include "matt/pbr.hpp"
 
 using namespace glm;
 
@@ -36,9 +40,109 @@ namespace {
 }
 
 // make new station
-Station::Station() {
+Station::Station() : m_multiModel(nullptr), m_modelLoaded(false) {
     initializeLSystem();
     rebuildMeshes();
+
+    // Load the multi-material model
+    loadMultiMaterialModel(CGRA_SRCDIR + std::string("/res/assets/OpenModule.obj"));
+}
+
+Station::~Station() {
+    if (m_multiModel) {
+        m_multiModel->destroy();
+        delete m_multiModel;
+        m_multiModel = nullptr;
+    }
+}
+
+// Load multi-material model
+void Station::loadMultiMaterialModel(const std::string& filepath) {
+    if (m_multiModel) {
+        m_multiModel->destroy();
+        delete m_multiModel;
+    }
+
+    m_multiModel = new cgra::multi_mesh_model();
+    *m_multiModel = cgra::load_multi_mesh_model(filepath);
+
+    if (!m_multiModel->mesh_groups.empty()) {
+        m_modelLoaded = true;
+        assignCyclicalMaterials();
+        std::cout << "Station: Loaded multi-material model with "
+            << m_multiModel->mesh_groups.size() << " material groups" << std::endl;
+    }
+    else {
+        m_modelLoaded = false;
+        std::cout << "Station: Failed to load multi-material model" << std::endl;
+    }
+}
+
+// Assign materials in cyclical pattern: 0,1,2,0,1,2...
+void Station::assignCyclicalMaterials() {
+    m_materialAssignments.clear();
+
+    if (!m_multiModel || m_multiModel->mesh_groups.empty()) {
+        return;
+    }
+
+    // Assign materials in pattern: 0=gold, 1=plastic, 2=cloth, repeat
+    for (size_t i = 0; i < m_multiModel->mesh_groups.size(); ++i) {
+        int materialIndex = i % 3; // Cycles through 0, 1, 2
+        m_materialAssignments.push_back(materialIndex);
+
+        std::cout << "Station: Assigned material " << materialIndex
+            << " to group '" << m_multiModel->mesh_groups[i].material_name << "'" << std::endl;
+    }
+}
+
+// Get material index for a given group
+int Station::getMaterialIndexForGroup(size_t groupIndex) const {
+    if (groupIndex < m_materialAssignments.size()) {
+        return m_materialAssignments[groupIndex];
+    }
+    return 1; // Default to plastic
+}
+
+// Render multi-material model with PBR
+void Station::renderMultiMaterialModel(const glm::mat4& view, const glm::mat4& proj, GLuint pbrShader, const glm::vec3& camPos) {
+    if (!m_showModelButton || !m_modelLoaded || !m_multiModel) {
+        return;
+    }
+
+    glUseProgram(pbrShader);
+    glUniformMatrix4fv(glGetUniformLocation(pbrShader, "projection"), 1, GL_FALSE, value_ptr(proj));
+    glUniformMatrix4fv(glGetUniformLocation(pbrShader, "view"), 1, GL_FALSE, value_ptr(view));
+    glUniform3fv(glGetUniformLocation(pbrShader, "camPos"), 1, value_ptr(camPos));
+
+    mat4 model = glm::mat4(1.0f);
+    glUniformMatrix4fv(glGetUniformLocation(pbrShader, "model"), 1, GL_FALSE, value_ptr(model));
+    glUniformMatrix3fv(glGetUniformLocation(pbrShader, "normalMatrix"), 1, GL_FALSE,
+        value_ptr(glm::transpose(glm::inverse(glm::mat3(model)))));
+
+    // Render each material group with its assigned PBR material
+    for (size_t i = 0; i < m_multiModel->mesh_groups.size(); ++i) {
+        int materialIndex = getMaterialIndexForGroup(i);
+
+        // Bind the appropriate PBR material textures
+        switch (materialIndex) {
+        case 0:
+            bindPBRTextures(gold);
+            break;
+        case 1:
+            bindPBRTextures(plastic);
+            break;
+        case 2:
+            bindPBRTextures(cloth);
+            break;
+        default:
+            bindPBRTextures(plastic);
+            break;
+        }
+
+        // Draw this material group
+        m_multiModel->mesh_groups[i].mesh.draw();
+    }
 }
 
 // make sphere mesh
@@ -626,17 +730,22 @@ void Station::renderControlsPanel() {
     // materials
     if (ImGui::CollapsingHeader("Model Materials", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::Spacing();
-        ImGui::TextWrapped("Randomize the PBR materials assigned to the multi-material model.");
+        ImGui::TextWrapped("Toggle the multi-material PBR model display.");
         ImGui::Spacing();
         ImGui::Checkbox("Show Multi-Material Model", &m_showModelButton);
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.7f, 0.3f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.8f, 0.4f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.15f, 0.6f, 0.25f, 1.0f));
-        if (ImGui::Button("Re-assign Random Materials", ImVec2(-1, 30))) {
-            if (m_reassignMaterialsCallback) m_reassignMaterialsCallback();
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Show/hide the PBR model with cyclical materials (gold/plastic/cloth)");
+        ImGui::Spacing();
+
+        if (m_modelLoaded) {
+            ImGui::Text("Materials assigned in pattern: 0,1,2,0,1,2...");
+            ImGui::BulletText("0 = Gold");
+            ImGui::BulletText("1 = Plastic");
+            ImGui::BulletText("2 = Cloth");
         }
-        ImGui::PopStyleColor(3);
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Randomly assigns new PBR materials to all model parts");
+        else {
+            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "Model not loaded");
+        }
+
         ImGui::Spacing();
     }
 
