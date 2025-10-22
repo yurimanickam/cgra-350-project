@@ -51,15 +51,6 @@ Application::Application(GLFWwindow* window) : m_window(window) {
 		CGRA_SRCDIR + std::string("//res//shaders//lava_fragment.glsl")
 	);
 
-	float cyl_radius = 5.0f;
-	float cyl_height = 40.0f;
-	int cyl_subdiv = 48;
-	bool cyl_capped = true;
-	m_cylinderModel.shader = m_default_shader;
-	m_cylinderModel.mesh = m_station.createCylinderMesh(cyl_radius, cyl_height, cyl_subdiv, cyl_capped);
-	m_cylinderModel.color = glm::vec3(0.1f, 0.8f, 0.3f);
-	m_cylinderModel.modelTransform = glm::translate(glm::mat4(1.0f), glm::vec3(-8.0f, cyl_height / 2.0f, 0.0f));
-
 	m_station.initializeLSystem();
 }
 
@@ -100,7 +91,7 @@ void Application::render() {
 	mat4 view = lookAt(m_cameraPos, m_cameraPos + front, up);
 
 	// Setup PBR shader if needed
-	if (m_UseSkybox || m_UseSphere || m_station.shouldShowModel()) {
+	if (m_UseSkybox || m_UseSphere || m_station.shouldDrawStation()) {
 		// pbr
 		glUseProgram(m_pbr_shader);
 		glUniformMatrix4fv(glGetUniformLocation(m_pbr_shader, "projection"), 1, GL_FALSE, value_ptr(proj));
@@ -148,8 +139,8 @@ void Application::render() {
 		renderSphere();
 	}
 
-	// Render the multi-material model through Station class (self-contained, no callback needed)
-	if (m_station.shouldShowModel()) {
+	// Render the multi-material model instances for station modules
+	if (m_station.shouldDrawStation()) {
 		m_station.renderMultiMaterialModel(view, proj, m_pbr_shader, m_cameraPos);
 	}
 
@@ -169,7 +160,7 @@ void Application::render() {
 	if (m_show_axis) drawAxis(view, proj);
 	glPolygonMode(GL_FRONT_AND_BACK, (m_showWireframe) ? GL_LINE : GL_FILL);
 
-	// Draw the L-System space station in 3D
+	// Draw the L-System space station in 3D (junctions only, modules are rendered via renderMultiMaterialModel)
 	m_station.render3DStation(view, proj, m_default_shader);
 
 	// Render lava lamp
@@ -244,7 +235,7 @@ void Application::renderGUI() {
 
 	ImGui::End();
 
-	// Render Station GUI (which now includes all multi-material model controls)
+	// Render Station GUI (which now includes all module rendering controls)
 	m_station.renderGUI();
 }
 

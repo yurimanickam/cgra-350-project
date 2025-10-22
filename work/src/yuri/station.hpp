@@ -15,7 +15,6 @@ namespace cgra {
 
 struct Rendering3DParams {
     float junctionRadius = 1.0f;
-    float moduleRadius = 1.5f;
     float gapMultiplier = 0.0f;
 };
 
@@ -25,7 +24,6 @@ public:
     ~Station();
 
     // Mesh generation
-    cgra::gl_mesh createCylinderMesh(float radius, float height, int subdivisions, bool capped);
     cgra::gl_mesh createSphereMesh(float radius, int stacks, int slices);
 
     // L-System generation (delegates to LSystem)
@@ -38,7 +36,7 @@ public:
     // 3D rendering
     void render3DStation(const glm::mat4& view, const glm::mat4& proj, GLuint shader);
 
-    // Multi-material model rendering
+    // Multi-material model rendering (now used for modules)
     void renderMultiMaterialModel(const glm::mat4& view, const glm::mat4& proj, GLuint pbrShader, const glm::vec3& camPos);
 
     // Accessors
@@ -60,7 +58,6 @@ private:
 
     // 3D rendering
     Rendering3DParams m_renderParams;
-    cgra::gl_mesh m_moduleMesh;
     cgra::gl_mesh m_junctionMesh;
     bool m_meshNeedsRebuild = true;
 
@@ -83,8 +80,11 @@ private:
 
     // 3D rendering helpers
     void rebuildMeshes();
-    glm::mat4 calculateModuleTransform(const StationModule& module, float gapSize) const;
     glm::vec3 getModuleColor(int moduleType) const;
+
+    // Helper to get model positions for a module
+    std::vector<glm::vec3> getModelPositionsForModule(const StationModule& module) const;
+    glm::mat4 calculateModelTransform(const glm::vec3& position, float rotation, bool isVertical, bool pointingUp) const;
 
     bool m_showModelButton = false;
 };

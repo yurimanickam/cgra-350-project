@@ -11,6 +11,7 @@ namespace {
     constexpr float TWO_PI = glm::two_pi<float>();
     constexpr float PI = glm::pi<float>();
     constexpr int NUM_MODULE_TYPES = 4;
+    constexpr float MODEL_LENGTH = 10.0f; // One model unit
 }
 
 LSystem::LSystem() {
@@ -100,6 +101,13 @@ std::string LSystem::applyRules(const std::string& current) {
     return result;
 }
 
+// Quantize length to 10, 20, or 30 (1, 2, or 3 model units)
+float LSystem::quantizeLength(float length) const {
+    if (length < 15.0f) return 10.0f;      // 1 model
+    else if (length < 25.0f) return 20.0f; // 2 models
+    else return 30.0f;                      // 3 models
+}
+
 // Interpret sequence
 void LSystem::interpretSequence(const std::string& sequence) {
     m_modules.clear();
@@ -119,11 +127,13 @@ void LSystem::interpretSequence(const std::string& sequence) {
     for (char command : sequence) {
         switch (command) {
         case 'F': {
-            float actualLength = std::max(m_params.minLength, state.length);
+            float rawLength = std::max(m_params.minLength, state.length);
+            float actualLength = quantizeLength(rawLength);
+
             vec2 direction(std::cos(state.angle), std::sin(state.angle));
             vec2 newPos = state.position + direction * actualLength;
 
-            if (!isOverlapping(newPos, m_params.minLength * 0.5f)) {
+            if (!isOverlapping(newPos, MODEL_LENGTH * 0.5f)) {
                 int moduleType = getRandomInt(0, NUM_MODULE_TYPES - 1);
                 addModule(state.position, newPos, state.angle, actualLength, moduleType, state.generation);
                 addJunction(newPos, state.generation);
@@ -133,7 +143,7 @@ void LSystem::interpretSequence(const std::string& sequence) {
                     && getRandomFloat(0.0f, 1.0f) < m_params.verticalProbability) {
 
                     bool pointingUp = getRandomFloat(0.0f, 1.0f) > 0.5f;
-                    float vertLength = actualLength * 0.7f;
+                    float vertLength = quantizeLength(actualLength * 0.7f);
                     int vertModuleType = getRandomInt(0, NUM_MODULE_TYPES - 1);
                     addVerticalModule(newPos, state.verticalOffset, pointingUp, vertLength, vertModuleType, state.generation);
                     state.hasVerticalChild = true;
@@ -183,6 +193,7 @@ void LSystem::addModule(const glm::vec2& startPos, const glm::vec2& endPos, floa
     module.generation = generation;
     module.verticalOffset = 0.0f;
     module.isVertical = false;
+    module.modelCount = static_cast<int>(length / MODEL_LENGTH);
     m_modules.push_back(module);
 }
 
@@ -197,6 +208,7 @@ void LSystem::addVerticalModule(const glm::vec2& basePos, float baseVerticalOffs
     module.generation = generation;
     module.verticalOffset = baseVerticalOffset;
     module.isVertical = true;
+    module.modelCount = static_cast<int>(length / MODEL_LENGTH);
 
     float endVerticalOffset = pointingUp ? (baseVerticalOffset + length) : (baseVerticalOffset - length);
     addVerticalJunction(basePos, endVerticalOffset, generation);
@@ -235,9 +247,10 @@ void LSystem::connectNearbyJunctions(const glm::vec2& newJunctionPos, int genera
     int nearJunction = findNearestJunction(newJunctionPos, m_params.baseLength * 2.0f);
     if (nearJunction >= 0) {
         const glm::vec2& targetPos = m_junctions[nearJunction].position;
-        if (length(targetPos - newJunctionPos) > 0.5f) {
+        float dist = length(targetPos - newJunctionPos);
+        if (dist > 0.5f) {
             vec2 dir = targetPos - newJunctionPos;
-            float len = length(dir);
+            float len = quantizeLength(dist);
             float angle = std::atan2(dir.y, dir.x);
             int moduleType = 0;
             addModule(newJunctionPos, targetPos, angle, len, moduleType, generation);

@@ -18,6 +18,9 @@ namespace {
     constexpr float HALF_PI = glm::half_pi<float>();
     constexpr float TWO_PI = glm::two_pi<float>();
     constexpr float PI = glm::pi<float>();
+    constexpr float MODEL_LENGTH = 10.0f;
+    constexpr float MODEL_HEIGHT = 5.0f;
+    constexpr float MODEL_WIDTH = 5.0f;
 
     // module colors for preview
     const ImU32 MODULE_COLORS[] = {
@@ -104,44 +107,145 @@ int Station::getMaterialIndexForGroup(size_t groupIndex) const {
     return 1; // Default to plastic
 }
 
-// Render multi-material model with PBR
+// Get positions for models in a module
+std::vector<glm::vec3> Station::getModelPositionsForModule(const StationModule& module) const {
+    std::vector<glm::vec3> positions;
+
+    if (module.isVertical) {
+        const auto& junctions = m_lsystem.getJunctions();
+        vec3 basePos3D(module.startPos.x, module.verticalOffset, module.startPos.y);
+
+        // Find end vertical offset
+        float endY = module.verticalOffset;
+        for (const auto& junction : junctions) {
+            if (length(junction.position - module.startPos) < 0.1f &&
+                std::abs(junction.verticalOffset - module.verticalOffset) > 0.1f) {
+                endY = junction.verticalOffset;
+                break;
+            }
+        }
+
+        bool pointingUp = endY > module.verticalOffset;
+        float direction = pointingUp ? 1.0f : -1.0f;
+        float gapSize = m_renderParams.junctionRadius * m_renderParams.gapMultiplier;
+
+        // Place models vertically
+        for (int i = 0; i < module.modelCount; ++i) {
+            float offset = gapSize + MODEL_LENGTH * 0.5f + i * MODEL_LENGTH;
+            positions.push_back(basePos3D + vec3(0.0f, direction * offset, 0.0f));
+        }
+    }
+    else {
+        vec3 fromPos3D(module.startPos.x, 0.0f, module.startPos.y);
+        vec3 toPos3D(module.endPos.x, 0.0f, module.endPos.y);
+        vec3 direction = normalize(toPos3D - fromPos3D);
+        float gapSize = m_renderParams.junctionRadius * m_renderParams.gapMultiplier;
+
+        // Place models horizontally along the line
+        for (int i = 0; i < module.modelCount; ++i) {
+            float offset = gapSize + MODEL_LENGTH * 0.5f + i * MODEL_LENGTH;
+            positions.push_back(fromPos3D + direction * offset);
+        }
+    }
+
+    return positions;
+}
+
+// Calculate transform for a single model instance
+glm::mat4 Station::calculateModelTransform(const glm::vec3& position, float rotation, bool isVertical, bool pointingUp) const {
+    mat4 transform = translate(mat4(1.0f), position);
+
+    if (isVertical) {
+        if (pointingUp) {
+            transform = rotate(transform, HALF_PI, vec3(0.0f, 0.0f, 1.0f));
+        }
+        else {
+            transform = rotate(transform, -HALF_PI, vec3(0.0f, 0.0f, 1.0f));
+        }
+    }
+    else {
+        // Rotate around Y axis for horizontal orientation
+        vec3 defaultDir(1.0f, 0.0f, 0.0f);
+        float cosAngle = std::cos(rotation);
+        float sinAngle = std::sin(rotation);
+        vec3 normalizedDir(cosAngle, 0.0f, sinAngle);
+
+        vec3 rotAxis = cross(defaultDir, normalizedDir);
+        float rotAxisLen = length(rotAxis);
+
+        if (rotAxisLen > 0.001f) {
+            float angle = std::acos(glm::clamp(dot(defaultDir, normalizedDir), -1.0f, 1.0f));
+            transform = rotate(transform, angle, normalize(rotAxis));
+        }
+        else if (dot(defaultDir, normalizedDir) < 0.0f) {
+            transform = rotate(transform, PI, vec3(0.0f, 1.0f, 0.0f));
+        }
+    }
+
+    return transform;
+}
+
+// Render multi-material model instances for all modules
 void Station::renderMultiMaterialModel(const glm::mat4& view, const glm::mat4& proj, GLuint pbrShader, const glm::vec3& camPos) {
-    if (!m_showModelButton || !m_modelLoaded || !m_multiModel) {
+    if (!m_drawStation || !m_modelLoaded || !m_multiModel) {
         return;
     }
+
+    const auto& modules = m_lsystem.getModules();
+    const auto& junctions = m_lsystem.getJunctions();
 
     glUseProgram(pbrShader);
     glUniformMatrix4fv(glGetUniformLocation(pbrShader, "projection"), 1, GL_FALSE, value_ptr(proj));
     glUniformMatrix4fv(glGetUniformLocation(pbrShader, "view"), 1, GL_FALSE, value_ptr(view));
     glUniform3fv(glGetUniformLocation(pbrShader, "camPos"), 1, value_ptr(camPos));
 
-    mat4 model = glm::mat4(1.0f);
-    glUniformMatrix4fv(glGetUniformLocation(pbrShader, "model"), 1, GL_FALSE, value_ptr(model));
-    glUniformMatrix3fv(glGetUniformLocation(pbrShader, "normalMatrix"), 1, GL_FALSE,
-        value_ptr(glm::transpose(glm::inverse(glm::mat3(model)))));
+    // Render each module as instances of the multi-material model
+    for (const auto& module : modules) {
+        std::vector<glm::vec3> positions = getModelPositionsForModule(module);
 
-    // Render each material group with its assigned PBR material
-    for (size_t i = 0; i < m_multiModel->mesh_groups.size(); ++i) {
-        int materialIndex = getMaterialIndexForGroup(i);
-
-        // Bind the appropriate PBR material textures
-        switch (materialIndex) {
-        case 0:
-            bindPBRTextures(gold);
-            break;
-        case 1:
-            bindPBRTextures(plastic);
-            break;
-        case 2:
-            bindPBRTextures(cloth);
-            break;
-        default:
-            bindPBRTextures(plastic);
-            break;
+        // Determine if pointing up for vertical modules
+        bool pointingUp = false;
+        if (module.isVertical) {
+            for (const auto& junction : junctions) {
+                if (length(junction.position - module.startPos) < 0.1f &&
+                    std::abs(junction.verticalOffset - module.verticalOffset) > 0.1f) {
+                    pointingUp = junction.verticalOffset > module.verticalOffset;
+                    break;
+                }
+            }
         }
 
-        // Draw this material group
-        m_multiModel->mesh_groups[i].mesh.draw();
+        // Render each model instance
+        for (const auto& pos : positions) {
+            mat4 modelTransform = calculateModelTransform(pos, module.rotation, module.isVertical, pointingUp);
+            glUniformMatrix4fv(glGetUniformLocation(pbrShader, "model"), 1, GL_FALSE, value_ptr(modelTransform));
+            glUniformMatrix3fv(glGetUniformLocation(pbrShader, "normalMatrix"), 1, GL_FALSE,
+                value_ptr(glm::transpose(glm::inverse(glm::mat3(modelTransform)))));
+
+            // Render each material group with its assigned PBR material
+            for (size_t i = 0; i < m_multiModel->mesh_groups.size(); ++i) {
+                int materialIndex = getMaterialIndexForGroup(i);
+
+                // Bind the appropriate PBR material textures
+                switch (materialIndex) {
+                case 0:
+                    bindPBRTextures(gold);
+                    break;
+                case 1:
+                    bindPBRTextures(plastic);
+                    break;
+                case 2:
+                    bindPBRTextures(cloth);
+                    break;
+                default:
+                    bindPBRTextures(plastic);
+                    break;
+                }
+
+                // Draw this material group
+                m_multiModel->mesh_groups[i].mesh.draw();
+            }
+        }
     }
 }
 
@@ -188,72 +292,8 @@ cgra::gl_mesh Station::createSphereMesh(float radius, int stacks, int slices) {
 
 // Rebuild mesh shapes
 void Station::rebuildMeshes() {
-    m_moduleMesh = createCylinderMesh(m_renderParams.moduleRadius, 1.0f, 16, false);
     m_junctionMesh = createSphereMesh(m_renderParams.junctionRadius, 16, 16);
     m_meshNeedsRebuild = false;
-}
-
-// Make cylinder mesh
-cgra::gl_mesh Station::createCylinderMesh(float radius, float length, int subdivisions, bool capped) {
-    using namespace cgra;
-    mesh_builder builder(GL_TRIANGLES);
-    float halfLength = length / 2.0f;
-    float deltaTheta = TWO_PI / float(subdivisions);
-
-    for (int i = 0; i <= subdivisions; ++i) {
-        float theta = i * deltaTheta;
-        float y = radius * std::cos(theta);
-        float z = radius * std::sin(theta);
-        vec3 normal = normalize(vec3(0, y, z));
-        float u = float(i) / subdivisions;
-
-        builder.vertices.push_back({ vec3(-halfLength, y, z), normal, vec2(u, 0) });
-        builder.vertices.push_back({ vec3(+halfLength, y, z), normal, vec2(u, 1) });
-    }
-
-    for (int i = 0; i < subdivisions; ++i) {
-        int idx = i * 2;
-        builder.indices.push_back(idx);
-        builder.indices.push_back(idx + 1);
-        builder.indices.push_back(idx + 2);
-
-        builder.indices.push_back(idx + 1);
-        builder.indices.push_back(idx + 3);
-        builder.indices.push_back(idx + 2);
-    }
-
-    if (capped) {
-        auto addCap = [&](float x, vec3 normal, bool reverseWinding) {
-            int centerIdx = builder.vertices.size();
-            builder.vertices.push_back({ vec3(x, 0, 0), normal, vec2(0.5f, 0.5f) });
-
-            for (int i = 0; i <= subdivisions; ++i) {
-                float theta = i * deltaTheta;
-                float y = radius * std::cos(theta);
-                float z = radius * std::sin(theta);
-                vec2 uv(0.5f + 0.5f * std::cos(theta), 0.5f + 0.5f * std::sin(theta));
-                builder.vertices.push_back({ vec3(x, y, z), normal, uv });
-            }
-
-            for (int i = 0; i < subdivisions; ++i) {
-                if (reverseWinding) {
-                    builder.indices.push_back(centerIdx);
-                    builder.indices.push_back(centerIdx + i + 2);
-                    builder.indices.push_back(centerIdx + i + 1);
-                }
-                else {
-                    builder.indices.push_back(centerIdx);
-                    builder.indices.push_back(centerIdx + i + 1);
-                    builder.indices.push_back(centerIdx + i + 2);
-                }
-            }
-            };
-
-        addCap(-halfLength, vec3(-1, 0, 0), false);
-        addCap(+halfLength, vec3(1, 0, 0), true);
-    }
-
-    return builder.build();
 }
 
 // Initialize L-System (delegates to LSystem)
@@ -277,82 +317,17 @@ glm::vec3 Station::getModuleColor(int moduleType) const {
     }
 }
 
-// Get module transform
-glm::mat4 Station::calculateModuleTransform(const StationModule& module, float gapSize) const {
-    const auto& junctions = m_lsystem.getJunctions();
-
-    if (module.isVertical) {
-        vec3 basePos3D(module.startPos.x, module.verticalOffset, module.startPos.y);
-        float endY = module.verticalOffset;
-        for (const auto& junction : junctions) {
-            if (length(junction.position - module.startPos) < 0.1f &&
-                std::abs(junction.verticalOffset - module.verticalOffset) > 0.1f) {
-                endY = junction.verticalOffset;
-                break;
-            }
-        }
-        bool pointingUp = endY > module.verticalOffset;
-        float actualLength = std::max(0.1f, std::abs(endY - module.verticalOffset) - 2.0f * gapSize);
-        vec3 centerPos = basePos3D + vec3(0.0f, (pointingUp ? 1.0f : -1.0f) * (gapSize + actualLength * 0.5f), 0.0f);
-        mat4 transform = translate(mat4(1.0f), centerPos);
-        if (pointingUp) {
-            transform = rotate(transform, HALF_PI, vec3(0.0f, 0.0f, 1.0f));
-        }
-        else {
-            transform = rotate(transform, -HALF_PI, vec3(0.0f, 0.0f, 1.0f));
-        }
-        transform = scale(transform, vec3(actualLength, 1.0f, 1.0f));
-        return transform;
-    }
-    else {
-        vec3 fromPos3D(module.startPos.x, 0.0f, module.startPos.y);
-        vec3 toPos3D(module.endPos.x, 0.0f, module.endPos.y);
-        vec3 direction = toPos3D - fromPos3D;
-        float fullDistance = length(direction);
-        float actualLength = std::max(0.1f, fullDistance - 2.0f * gapSize);
-        vec3 normalizedDir = normalize(direction);
-        vec3 centerPos = fromPos3D + normalizedDir * (gapSize + actualLength * 0.5f);
-        vec3 defaultDir(1.0f, 0.0f, 0.0f);
-        mat4 transform = translate(mat4(1.0f), centerPos);
-        vec3 rotAxis = cross(defaultDir, normalizedDir);
-        float rotAxisLen = length(rotAxis);
-
-        if (rotAxisLen > 0.001f) {
-            float angle = std::acos(glm::clamp(dot(defaultDir, normalizedDir), -1.0f, 1.0f));
-            transform = rotate(transform, angle, normalize(rotAxis));
-        }
-        else if (dot(defaultDir, normalizedDir) < 0.0f) {
-            transform = rotate(transform, PI, vec3(0.0f, 1.0f, 0.0f));
-        }
-        transform = scale(transform, vec3(actualLength, 1.0f, 1.0f));
-        return transform;
-    }
-}
-
-// Render station 3D view
+// Render station 3D view (now just junctions, modules are rendered via renderMultiMaterialModel)
 void Station::render3DStation(const glm::mat4& view, const glm::mat4& proj, GLuint shader) {
-    const auto& modules = m_lsystem.getModules();
     const auto& junctions = m_lsystem.getJunctions();
 
-    if (!m_drawStation || modules.empty()) return;
+    if (!m_drawStation || junctions.empty()) return;
     if (m_meshNeedsRebuild) rebuildMeshes();
 
     glUseProgram(shader);
     glUniformMatrix4fv(glGetUniformLocation(shader, "uProjectionMatrix"), 1, GL_FALSE, value_ptr(proj));
-    float gapSize = m_renderParams.junctionRadius * m_renderParams.gapMultiplier;
 
-    for (const auto& module : modules) {
-        mat4 modelTransform = calculateModuleTransform(module, gapSize);
-        mat4 modelView = view * modelTransform;
-        glUniformMatrix4fv(glGetUniformLocation(shader, "uModelViewMatrix"), 1, GL_FALSE, value_ptr(modelView));
-
-        vec3 color = getModuleColor(module.moduleType);
-        if (module.isVertical)
-            color = glm::min(color * 1.2f, vec3(1.0f));
-        glUniform3fv(glGetUniformLocation(shader, "uColor"), 1, value_ptr(color));
-        m_moduleMesh.draw();
-    }
-
+    // Render junctions
     for (const auto& junction : junctions) {
         vec3 pos3D(junction.position.x, junction.verticalOffset, junction.position.y);
         mat4 modelTransform = translate(mat4(1.0f), pos3D);
@@ -402,19 +377,17 @@ void Station::renderControlsPanel() {
         ImGui::Spacing();
         ImGui::Separator();
         ImGui::Spacing();
-        ImGui::Text("Module Sizing");
+        ImGui::Text("Module Sizing (10 unit increments)");
         ImGui::PushItemWidth(-1);
-        needsRegeneration |= ImGui::SliderFloat("##BaseLength", &params.baseLength, 5.0f, 30.0f, "Base: %.1f");
+        needsRegeneration |= ImGui::SliderFloat("##BaseLength", &params.baseLength, 10.0f, 30.0f, "Base: %.0f");
         ImGui::PopItemWidth();
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Initial module length");
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Initial module length (10, 20, or 30)");
         ImGui::PushItemWidth(-1);
         needsRegeneration |= ImGui::SliderFloat("##LengthDecay", &params.lengthDecay, 0.5f, 1.0f, "Decay: %.2f");
         ImGui::PopItemWidth();
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("How much modules shrink each generation");
-        ImGui::PushItemWidth(-1);
-        needsRegeneration |= ImGui::SliderFloat("##MinLength", &params.minLength, 1.0f, 10.0f, "Minimum: %.1f");
-        ImGui::PopItemWidth();
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Smallest allowed module size");
+        ImGui::Spacing();
+        ImGui::TextWrapped("Note: Modules are quantized to 10, 20, or 30 units (1-3 model instances)");
         ImGui::Spacing();
     }
 
@@ -462,19 +435,12 @@ void Station::renderControlsPanel() {
         ImGui::PopItemWidth();
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Size of spherical junction connectors");
         ImGui::PushItemWidth(-1);
-        if (ImGui::SliderFloat("##ModuleRadius", &m_renderParams.moduleRadius, 0.2f, 5.0f, "Modules: %.1f")) {
-            m_meshNeedsRebuild = true;
-        }
-        ImGui::PopItemWidth();
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Thickness/radius of module tubes");
-        ImGui::PushItemWidth(-1);
         ImGui::SliderFloat("##GapMult", &m_renderParams.gapMultiplier, 0.0f, 2.5f, "Gap: %.2fx");
         ImGui::PopItemWidth();
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Space between modules and junctions");
         ImGui::Spacing();
         if (ImGui::Button("Reset 3D Settings", ImVec2(-1, 0))) {
             m_renderParams.junctionRadius = 1.0f;
-            m_renderParams.moduleRadius = 1.5f;
             m_renderParams.gapMultiplier = 0.0f;
             m_meshNeedsRebuild = true;
         }
@@ -484,10 +450,7 @@ void Station::renderControlsPanel() {
     // Materials
     if (ImGui::CollapsingHeader("Model Materials", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::Spacing();
-        ImGui::TextWrapped("Toggle the multi-material PBR model display.");
-        ImGui::Spacing();
-        ImGui::Checkbox("Show Multi-Material Model", &m_showModelButton);
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Show/hide the PBR model with cyclical materials (gold/plastic/cloth)");
+        ImGui::TextWrapped("Modules are now rendered using the multi-material PBR model.");
         ImGui::Spacing();
 
         if (m_modelLoaded) {
@@ -495,6 +458,8 @@ void Station::renderControlsPanel() {
             ImGui::BulletText("0 = Gold");
             ImGui::BulletText("1 = Plastic");
             ImGui::BulletText("2 = Cloth");
+            ImGui::Spacing();
+            ImGui::TextWrapped("Each module displays 1-3 instances of the model based on length.");
         }
         else {
             ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "Model not loaded");
@@ -524,10 +489,6 @@ void Station::renderControlsPanel() {
     ImGui::Separator();
     ImGui::Spacing();
 
-    ImGui::Spacing();
-    ImGui::Separator();
-    ImGui::Spacing();
-
     // Stats
     if (ImGui::CollapsingHeader("Statistics", ImGuiTreeNodeFlags_DefaultOpen)) {
         const auto& modules = m_lsystem.getModules();
@@ -542,8 +503,16 @@ void Station::renderControlsPanel() {
         ImGui::NextColumn();
 
         int verticalCount = 0;
-        for (const auto& module : modules)
+        int totalModelInstances = 0;
+        for (const auto& module : modules) {
             if (module.isVertical) verticalCount++;
+            totalModelInstances += module.modelCount;
+        }
+
+        ImGui::Text("Model Instances:");
+        ImGui::NextColumn();
+        ImGui::Text("%d", totalModelInstances);
+        ImGui::NextColumn();
 
         ImGui::Text("Vertical Modules:");
         ImGui::NextColumn();
@@ -693,8 +662,8 @@ void Station::renderPreviewPanel() {
     ImGui::Spacing();
 
     ImGui::TextWrapped("Tip: Use the zoom controls to explore the station layout. "
-        "Colored lines represent functional modules (tubes), gray circles show horizontal junctions, "
-        "and orange circles show vertical connection points.");
+        "Colored lines represent functional modules, gray circles show horizontal junctions, "
+        "and orange circles show vertical connection points. Each module is rendered as 1-3 model instances.");
 }
 
 // Calculate bounds
