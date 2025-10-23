@@ -140,8 +140,31 @@ cgra::multi_mesh_model* Station::getModelForLength(float length) const {
     else return m_module3;                       // 30 units
 }
 
+float Station::calculateCumulativeSpacing(const StationModule& module) const {
+    // Calculate how many modules come before this one in the generation sequence
+    // This creates cumulative spacing for every module iteration
+    const auto& modules = m_lsystem.getModules();
+
+    float totalSpacing = 0.0f;
+
+    // Find the index of the current module
+    for (size_t i = 0; i < modules.size(); ++i) {
+        if (&modules[i] == &module) {
+            // Count how many modules were generated before this one
+            // Each module adds spacing, creating the cumulative effect
+            totalSpacing = m_renderParams.moduleSpacing * static_cast<float>(i);
+            break;
+        }
+    }
+
+    return totalSpacing;
+}
+
 glm::mat4 Station::calculateModuleTransform(const StationModule& module) const {
     const auto& junctions = m_lsystem.getJunctions();
+
+    // Calculate cumulative spacing based on module generation order
+    float cumulativeSpacing = calculateCumulativeSpacing(module);
 
     if (module.isVertical) {
         // Find the target vertical junction
@@ -157,21 +180,23 @@ glm::mat4 Station::calculateModuleTransform(const StationModule& module) const {
         bool pointingUp = endY > module.verticalOffset;
         vec3 position(module.startPos.x, module.verticalOffset, module.startPos.y);
 
-        // Calculate center position
+        // Calculate center position with cumulative spacing adjustment
         float moduleLength = module.length;
-        float centerOffset = (moduleLength / 2.0f) + (JUNCTION_SIZE / 2.0f);
-        position.y += pointingUp ? centerOffset : -centerOffset;
+        float baseOffset = (moduleLength / 2.0f) + (JUNCTION_SIZE / 2.0f);
+        float totalOffset = baseOffset + cumulativeSpacing;
+
+        position.y += pointingUp ? totalOffset : -totalOffset;
 
         // Start with translation
         mat4 transform = translate(mat4(1.0f), position);
 
         // Rotate to point vertically
         if (pointingUp) {
-            // Point up: rotate -90 around X axis
+            // Point up: rotate -90 around Z axis
             transform = rotate(transform, -HALF_PI, vec3(0.0f, 0.0f, 1.0f));
         }
         else {
-            // Point down: rotate 90 around X axis
+            // Point down: rotate 90 around Z axis
             transform = rotate(transform, HALF_PI, vec3(0.0f, 0.0f, 1.0f));
         }
 
@@ -185,8 +210,16 @@ glm::mat4 Station::calculateModuleTransform(const StationModule& module) const {
         // Calculate direction and center position
         vec3 direction = normalize(toPos3D - fromPos3D);
         float moduleLength = module.length;
-        float centerOffset = (moduleLength / 2.0f) + (JUNCTION_SIZE / 2.0f);
-        vec3 position = fromPos3D + direction * centerOffset;
+
+        // Apply cumulative spacing: each module is further away based on generation order
+        float baseSpacingOffset = (JUNCTION_SIZE / 2.0f);
+        float totalSpacingOffset = baseSpacingOffset + cumulativeSpacing;
+
+        vec3 startPosition = fromPos3D + direction * totalSpacingOffset;
+
+        // Position at center of the spaced module
+        float centerOffset = moduleLength / 2.0f;
+        vec3 position = startPosition + direction * centerOffset;
 
         // Start with translation
         mat4 transform = translate(mat4(1.0f), position);
@@ -252,14 +285,14 @@ void Station::renderMultiMaterialModel(const glm::mat4& view, const glm::mat4& p
     const auto& modules = m_lsystem.getModules();
     const auto& junctions = m_lsystem.getJunctions();
 
-    // Render all modules
+    // Render all modules with cumulative spacing
     for (const auto& module : modules) {
         cgra::multi_mesh_model* model = getModelForLength(module.length);
         mat4 transform = calculateModuleTransform(module);
         renderModelWithMaterials(model, transform, pbrShader, view, proj, camPos);
     }
 
-    // Render all junctions
+    // Render all junctions (unchanged)
     for (const auto& junction : junctions) {
         mat4 transform = calculateJunctionTransform(junction);
         renderModelWithMaterials(m_junctionModel, transform, pbrShader, view, proj, camPos);
@@ -416,6 +449,18 @@ void Station::renderControlsPanel() {
         ImGui::Spacing();
         ImGui::Checkbox("Enable 3D View", &m_drawStation);
         ImGui::Spacing();
+
+        // Module spacing slider - now affects every module iteration
+        if (m_drawStation) {
+            ImGui::Text("Module Spacing (Per Iteration)");
+            ImGui::PushItemWidth(-1);
+            ImGui::SliderFloat("##ModuleSpacing", &m_renderParams.moduleSpacing, -5.0f, 5.0f, "%.1f");
+            ImGui::PopItemWidth();
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Cumulative spacing applied to each module iteration (-5 to 5 units per module)");
+            ImGui::Spacing();
+            ImGui::TextWrapped("Note: Each module in the generation sequence gets cumulative spacing applied. Module 1 = 0x spacing, Module 2 = 1x spacing, Module 3 = 2x spacing, etc.");
+            ImGui::Spacing();
+        }
 
         if (m_modelsLoaded) {
             ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "All models loaded");
@@ -656,7 +701,7 @@ void Station::renderPreviewPanel() {
     ImGui::Spacing();
 
     ImGui::TextWrapped("Tip: Use the zoom controls to explore the station layout. "
-        "Modules are rendered as appropriate sized models (10, 20, or 30 units) with junctions between them.");
+        "Each module gets cumulative spacing based on its generation order, creating visible separation between all modules.");
 }
 
 void Station::calculateBounds(vec2& minBounds, vec2& maxBounds) const {
