@@ -16,8 +16,7 @@ namespace cgra {
 struct Rendering3DParams {
     float junctionRadius = 1.0f;
     float gapMultiplier = 0.0f;
-    float moduleSpacing = 2.0f;   // Spacing between every module and junction
-    float junctionSpacing = 1.0f; // Cumulative spacing for junctions
+    float moduleSpacing = 2.0f; // Spacing between every module and junction
 };
 
 class Station {
@@ -84,9 +83,8 @@ private:
     glm::mat4 calculateModuleTransform(const StationModule& module) const;
     glm::mat4 calculateJunctionTransform(const ModuleJunction& junction) const;
 
-    // Helper to calculate cumulative spacing offset for modules and junctions
-    float calculateCumulativeModuleSpacing(const StationModule& module) const;
-    float calculateCumulativeJunctionSpacing(const ModuleJunction& junction) const;
+    // Helper to calculate cumulative spacing offset for a module
+    float calculateCumulativeSpacing(const StationModule& module) const;
 
     // Render a model with PBR materials
     void renderModelWithMaterials(cgra::multi_mesh_model* model, const glm::mat4& modelTransform,
