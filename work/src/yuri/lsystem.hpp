@@ -5,17 +5,16 @@
 #include <vector>
 #include <random>
 
-// A Module is a functional segment of the station (rendered as the multi-material model)
+// A Module is a functional segment of the station (rendered as one of three model sizes)
 struct StationModule {
     glm::vec2 startPos;      // Start position in 2D layout
     glm::vec2 endPos;        // End position in 2D layout
     float rotation;          // Direction angle
-    float length;            // Length of the module (in model units: 10, 20, or 30)
+    float length;            // Length of the module (10, 20, or 30 units)
     int moduleType;          // 0=corridor, 1=habitat, 2=docking, 3=power
     int generation;          // L-System generation level
     float verticalOffset;    // Y-axis offset for vertical modules
     bool isVertical;         // True if module points up/down
-    int modelCount;          // Number of models to place (1, 2, or 3)
 
     StationModule()
         : startPos(0.0f)
@@ -26,12 +25,11 @@ struct StationModule {
         , generation(0)
         , verticalOffset(0.0f)
         , isVertical(false)
-        , modelCount(1)
     {
     }
 };
 
-// A Junction is a connection point between modules (rendered as a sphere)
+// A Junction is a connection point between modules (rendered as junction.obj)
 struct ModuleJunction {
     glm::vec2 position;
     int generation;
@@ -53,11 +51,11 @@ struct LSystemRule {
 
 struct LSystemParams {
     int iterations = 3;
-    float baseLength = 10.0f;      // Base module length (1 model unit)
+    float baseLength = 10.0f;      // Base module length (10, 20, or 30)
     float baseAngle = 90.0f;
     float lengthDecay = 0.8f;
     float connectionProbability = 0.2f;
-    float minLength = 10.0f;       // Minimum module length (1 model unit)
+    float minLength = 10.0f;       // Minimum module length
     bool allowLoops = true;
     bool allowVerticalModules = true;
     float verticalProbability = 0.15f;
@@ -114,7 +112,7 @@ private:
     bool isOverlapping(const glm::vec2& pos, float minDist) const;
     int findNearestJunction(const glm::vec2& position, float maxDistance) const;
 
-    // Helper to quantize length to model units (10, 20, or 30)
+    // Helper to quantize length to 10, 20, or 30 units
     float quantizeLength(float length) const;
 
     // Random utilities

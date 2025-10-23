@@ -101,11 +101,11 @@ std::string LSystem::applyRules(const std::string& current) {
     return result;
 }
 
-// Quantize length to 10, 20, or 30 (1, 2, or 3 model units)
+// Quantize length to EXACTLY 10, 20, or 30 units only
 float LSystem::quantizeLength(float length) const {
-    if (length < 15.0f) return 10.0f;      // 1 model
-    else if (length < 25.0f) return 20.0f; // 2 models
-    else return 30.0f;                      // 3 models
+    if (length < 15.0f) return 10.0f;      // 10 units
+    else if (length < 25.0f) return 20.0f; // 20 units
+    else return 30.0f;                      // 30 units
 }
 
 // Interpret sequence
@@ -193,7 +193,6 @@ void LSystem::addModule(const glm::vec2& startPos, const glm::vec2& endPos, floa
     module.generation = generation;
     module.verticalOffset = 0.0f;
     module.isVertical = false;
-    module.modelCount = static_cast<int>(length / MODEL_LENGTH);
     m_modules.push_back(module);
 }
 
@@ -208,7 +207,6 @@ void LSystem::addVerticalModule(const glm::vec2& basePos, float baseVerticalOffs
     module.generation = generation;
     module.verticalOffset = baseVerticalOffset;
     module.isVertical = true;
-    module.modelCount = static_cast<int>(length / MODEL_LENGTH);
 
     float endVerticalOffset = pointingUp ? (baseVerticalOffset + length) : (baseVerticalOffset - length);
     addVerticalJunction(basePos, endVerticalOffset, generation);

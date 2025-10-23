@@ -36,7 +36,7 @@ public:
     // 3D rendering
     void render3DStation(const glm::mat4& view, const glm::mat4& proj, GLuint shader);
 
-    // Multi-material model rendering (now used for modules)
+    // Multi-material model rendering (now uses 3 different module sizes + junction)
     void renderMultiMaterialModel(const glm::mat4& view, const glm::mat4& proj, GLuint pbrShader, const glm::vec3& camPos);
 
     // Accessors
@@ -61,15 +61,31 @@ private:
     cgra::gl_mesh m_junctionMesh;
     bool m_meshNeedsRebuild = true;
 
-    // Multi-material model data
-    cgra::multi_mesh_model* m_multiModel;
+    // Multi-material model data - now with 3 module sizes + junction
+    cgra::multi_mesh_model* m_module1;      // 10 units (10x5x5)
+    cgra::multi_mesh_model* m_module2;      // 20 units (20x5x5)
+    cgra::multi_mesh_model* m_module3;      // 30 units (30x5x5)
+    cgra::multi_mesh_model* m_junctionModel; // 5.9x5.9x5.9
     std::vector<int> m_materialAssignments; // Cyclical pattern: 0,1,2,0,1,2...
-    bool m_modelLoaded = false;
+    bool m_modelsLoaded = false;
 
     // Model loading and material assignment
-    void loadMultiMaterialModel(const std::string& filepath);
+    void loadModuleModels();
     void assignCyclicalMaterials();
+    void destroyModels();
     int getMaterialIndexForGroup(size_t groupIndex) const;
+
+    // Get the appropriate model based on module length
+    cgra::multi_mesh_model* getModelForLength(float length) const;
+
+    // Calculate transforms for modules and junctions
+    glm::mat4 calculateModuleTransform(const StationModule& module) const;
+    glm::mat4 calculateJunctionTransform(const ModuleJunction& junction) const;
+
+    // Render a model with PBR materials
+    void renderModelWithMaterials(cgra::multi_mesh_model* model, const glm::mat4& modelTransform,
+        GLuint pbrShader, const glm::mat4& view, const glm::mat4& proj,
+        const glm::vec3& camPos);
 
     // GUI
     void applyUIStyle();
@@ -81,10 +97,6 @@ private:
     // 3D rendering helpers
     void rebuildMeshes();
     glm::vec3 getModuleColor(int moduleType) const;
-
-    // Helper to get model positions for a module
-    std::vector<glm::vec3> getModelPositionsForModule(const StationModule& module) const;
-    glm::mat4 calculateModelTransform(const glm::vec3& position, float rotation, bool isVertical, bool pointingUp) const;
 
     bool m_showModelButton = false;
 };
