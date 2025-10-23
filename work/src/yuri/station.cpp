@@ -167,11 +167,11 @@ glm::mat4 Station::calculateModuleTransform(const StationModule& module) const {
 
         // Rotate to point vertically
         if (pointingUp) {
-            // Point up: rotate -90° around X axis
+            // Point up: rotate -90 around X axis
             transform = rotate(transform, -HALF_PI, vec3(1.0f, 0.0f, 0.0f));
         }
         else {
-            // Point down: rotate 90° around X axis
+            // Point down: rotate 90 around X axis
             transform = rotate(transform, HALF_PI, vec3(1.0f, 0.0f, 0.0f));
         }
 
@@ -418,10 +418,10 @@ void Station::renderControlsPanel() {
         ImGui::Spacing();
 
         if (m_modelsLoaded) {
-            ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "? All models loaded");
+            ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "All models loaded");
         }
         else {
-            ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "? Models not loaded");
+            ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "Models not loaded");
         }
 
         ImGui::Spacing();
