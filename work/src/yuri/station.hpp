@@ -16,8 +16,8 @@ namespace cgra {
 struct Rendering3DParams {
     float junctionRadius = 1.0f;
     float gapMultiplier = 0.0f;
-    float moduleSpacing = 2.0f; // Spacing between every module and junction
-    float layoutScale = 1.0f;   // Uniform scale factor for junction positions from root
+    float moduleSpacing = 1.0f; // Spacing between every module and junction
+    float layoutScale = 1.5f;   // Uniform scale factor for junction positions from root
 };
 
 class Station {
