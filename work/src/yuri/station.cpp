@@ -160,25 +160,43 @@ float Station::calculateCumulativeSpacing(const StationModule& module) const {
     return totalSpacing;
 }
 
+glm::vec2 Station::applyLayoutScale(const glm::vec2& position) const {
+    // Scale positions from the root (0, 0)
+    return position * m_renderParams.layoutScale;
+}
+
+float Station::applyLayoutScaleVertical(float verticalOffset) const {
+    // Scale vertical offsets from the root (0)
+    return verticalOffset * m_renderParams.layoutScale;
+}
+
 glm::mat4 Station::calculateModuleTransform(const StationModule& module) const {
     const auto& junctions = m_lsystem.getJunctions();
 
     // Calculate cumulative spacing based on module generation order
     float cumulativeSpacing = calculateCumulativeSpacing(module);
 
+    // Apply layout scale to positions
+    vec2 scaledStartPos = applyLayoutScale(module.startPos);
+    vec2 scaledEndPos = applyLayoutScale(module.endPos);
+    float scaledVerticalOffset = applyLayoutScaleVertical(module.verticalOffset);
+
     if (module.isVertical) {
         // Find the target vertical junction
-        float endY = module.verticalOffset;
+        float endY = scaledVerticalOffset;
         for (const auto& junction : junctions) {
-            if (length(junction.position - module.startPos) < 0.1f &&
-                std::abs(junction.verticalOffset - module.verticalOffset) > 0.1f) {
-                endY = junction.verticalOffset;
+            vec2 scaledJunctionPos = applyLayoutScale(junction.position);
+            float scaledJunctionVertical = applyLayoutScaleVertical(junction.verticalOffset);
+
+            if (length(scaledJunctionPos - scaledStartPos) < 0.1f &&
+                std::abs(scaledJunctionVertical - scaledVerticalOffset) > 0.1f) {
+                endY = scaledJunctionVertical;
                 break;
             }
         }
 
-        bool pointingUp = endY > module.verticalOffset;
-        vec3 position(module.startPos.x, module.verticalOffset, module.startPos.y);
+        bool pointingUp = endY > scaledVerticalOffset;
+        vec3 position(scaledStartPos.x, scaledVerticalOffset, scaledStartPos.y);
 
         // Calculate center position with cumulative spacing adjustment
         float moduleLength = module.length;
@@ -204,8 +222,8 @@ glm::mat4 Station::calculateModuleTransform(const StationModule& module) const {
     }
     else {
         // Horizontal module
-        vec3 fromPos3D(module.startPos.x, 0.0f, module.startPos.y);
-        vec3 toPos3D(module.endPos.x, 0.0f, module.endPos.y);
+        vec3 fromPos3D(scaledStartPos.x, 0.0f, scaledStartPos.y);
+        vec3 toPos3D(scaledEndPos.x, 0.0f, scaledEndPos.y);
 
         // Calculate direction and center position
         vec3 direction = normalize(toPos3D - fromPos3D);
@@ -236,7 +254,11 @@ glm::mat4 Station::calculateModuleTransform(const StationModule& module) const {
 }
 
 glm::mat4 Station::calculateJunctionTransform(const ModuleJunction& junction) const {
-    vec3 position(junction.position.x, junction.verticalOffset, junction.position.y);
+    // Apply layout scale to junction position
+    vec2 scaledPos = applyLayoutScale(junction.position);
+    float scaledVertical = applyLayoutScaleVertical(junction.verticalOffset);
+
+    vec3 position(scaledPos.x, scaledVertical, scaledPos.y);
     return translate(mat4(1.0f), position);
 }
 
@@ -285,14 +307,14 @@ void Station::renderMultiMaterialModel(const glm::mat4& view, const glm::mat4& p
     const auto& modules = m_lsystem.getModules();
     const auto& junctions = m_lsystem.getJunctions();
 
-    // Render all modules with cumulative spacing
+    // Render all modules with cumulative spacing and layout scale
     for (const auto& module : modules) {
         cgra::multi_mesh_model* model = getModelForLength(module.length);
         mat4 transform = calculateModuleTransform(module);
         renderModelWithMaterials(model, transform, pbrShader, view, proj, camPos);
     }
 
-    // Render all junctions (unchanged)
+    // Render all junctions with layout scale applied
     for (const auto& junction : junctions) {
         mat4 transform = calculateJunctionTransform(junction);
         renderModelWithMaterials(m_junctionModel, transform, pbrShader, view, proj, camPos);
@@ -450,8 +472,18 @@ void Station::renderControlsPanel() {
         ImGui::Checkbox("Enable 3D View", &m_drawStation);
         ImGui::Spacing();
 
-        // Module spacing slider - now affects every module iteration
         if (m_drawStation) {
+            // Layout scale slider
+            ImGui::Text("Station Layout Scale");
+            ImGui::PushItemWidth(-1);
+            ImGui::SliderFloat("##LayoutScale", &m_renderParams.layoutScale, 0.5f, 5.0f, "%.2f");
+            ImGui::PopItemWidth();
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Uniformly scales junction positions from root (makes station appear larger/smaller without changing model sizes)");
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Spacing();
+
+            // Module spacing slider
             ImGui::Text("Module Spacing (Per Iteration)");
             ImGui::PushItemWidth(-1);
             ImGui::SliderFloat("##ModuleSpacing", &m_renderParams.moduleSpacing, -5.0f, 5.0f, "%.1f");
@@ -701,7 +733,8 @@ void Station::renderPreviewPanel() {
     ImGui::Spacing();
 
     ImGui::TextWrapped("Tip: Use the zoom controls to explore the station layout. "
-        "Each module gets cumulative spacing based on its generation order, creating visible separation between all modules.");
+        "Each module gets cumulative spacing based on its generation order, creating visible separation between all modules. "
+        "Layout scale uniformly expands/contracts the entire station from the root.");
 }
 
 void Station::calculateBounds(vec2& minBounds, vec2& maxBounds) const {
@@ -710,8 +743,10 @@ void Station::calculateBounds(vec2& minBounds, vec2& maxBounds) const {
     minBounds = vec2(FLT_MAX);
     maxBounds = vec2(-FLT_MAX);
     for (const auto& junction : junctions) {
-        minBounds = glm::min(minBounds, junction.position);
-        maxBounds = glm::max(maxBounds, junction.position);
+        // Apply layout scale when calculating bounds for preview
+        vec2 scaledPos = applyLayoutScale(junction.position);
+        minBounds = glm::min(minBounds, scaledPos);
+        maxBounds = glm::max(maxBounds, scaledPos);
     }
     vec2 padding(25.0f);
     minBounds -= padding;
@@ -779,9 +814,11 @@ void Station::drawVisualization() {
     }
 
     auto worldToScreen = [&](const vec2& worldPos) -> ImVec2 {
+        // Apply layout scale to preview visualization
+        vec2 scaledPos = applyLayoutScale(worldPos);
         return ImVec2(
-            canvas_pos.x + offset.x + (worldPos.x - minBounds.x) * scale,
-            canvas_pos.y + offset.y + (worldPos.y - minBounds.y) * scale
+            canvas_pos.x + offset.x + (scaledPos.x - minBounds.x) * scale,
+            canvas_pos.y + offset.y + (scaledPos.y - minBounds.y) * scale
         );
         };
 
