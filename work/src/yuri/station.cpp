@@ -48,7 +48,7 @@ Station::Station() : m_multiModel(nullptr), m_modelLoaded(false) {
     rebuildMeshes();
 
     // Load the multi-material model
-    loadMultiMaterialModel(CGRA_SRCDIR + std::string("/res/assets/OpenModule.obj"));
+    loadMultiMaterialModel(CGRA_SRCDIR + std::string("/res/assets/module3.obj"));
 }
 
 Station::~Station() {
@@ -151,35 +151,24 @@ std::vector<glm::vec3> Station::getModelPositionsForModule(const StationModule& 
     return positions;
 }
 
-// Calculate transform for a single model instance
 glm::mat4 Station::calculateModelTransform(const glm::vec3& position, float rotation, bool isVertical, bool pointingUp) const {
-    mat4 transform = translate(mat4(1.0f), position);
+    glm::mat4 transform = glm::translate(glm::mat4(1.0f), position);
 
     if (isVertical) {
-        if (pointingUp) {
-            transform = rotate(transform, HALF_PI, vec3(0.0f, 0.0f, 1.0f));
-        }
-        else {
-            transform = rotate(transform, -HALF_PI, vec3(0.0f, 0.0f, 1.0f));
+        // Rotate 90° around Y to make default vertical direction Z+ (from X+)
+        transform = glm::rotate(transform, glm::half_pi<float>(), glm::vec3(0.0f, 1.0f, 0.0f));
+        if (!pointingUp) {
+            // If pointing down, rotate 180° on X
+            transform = glm::rotate(transform, glm::pi<float>(), glm::vec3(1.0f, 0.0f, 0.0f));
         }
     }
     else {
-        // Rotate around Y axis for horizontal orientation
-        vec3 defaultDir(1.0f, 0.0f, 0.0f);
-        float cosAngle = std::cos(rotation);
-        float sinAngle = std::sin(rotation);
-        vec3 normalizedDir(cosAngle, 0.0f, sinAngle);
+        // Rotate 90° on Z to make default horizontal direction Y+ (from X+)
+        //transform = glm::rotate(transform, glm::half_pi<float>(), glm::vec3(0.0f, 1.0f, 0.0f));
 
-        vec3 rotAxis = cross(defaultDir, normalizedDir);
-        float rotAxisLen = length(rotAxis);
+        // Now rotate around Y for the requested rotation
+        //transform = glm::rotate(transform, rotation, glm::vec3(1.0f, 0.0f, 0.0f));
 
-        if (rotAxisLen > 0.001f) {
-            float angle = std::acos(glm::clamp(dot(defaultDir, normalizedDir), -1.0f, 1.0f));
-            transform = rotate(transform, angle, normalize(rotAxis));
-        }
-        else if (dot(defaultDir, normalizedDir) < 0.0f) {
-            transform = rotate(transform, PI, vec3(0.0f, 1.0f, 0.0f));
-        }
     }
 
     return transform;
