@@ -140,9 +140,8 @@ cgra::multi_mesh_model* Station::getModelForLength(float length) const {
     else return m_module3;                       // 30 units
 }
 
-float Station::calculateCumulativeSpacing(const StationModule& module) const {
+float Station::calculateCumulativeModuleSpacing(const StationModule& module) const {
     // Calculate how many modules come before this one in the generation sequence
-    // This creates cumulative spacing for every module iteration
     const auto& modules = m_lsystem.getModules();
 
     float totalSpacing = 0.0f;
@@ -151,8 +150,25 @@ float Station::calculateCumulativeSpacing(const StationModule& module) const {
     for (size_t i = 0; i < modules.size(); ++i) {
         if (&modules[i] == &module) {
             // Count how many modules were generated before this one
-            // Each module adds spacing, creating the cumulative effect
             totalSpacing = m_renderParams.moduleSpacing * static_cast<float>(i);
+            break;
+        }
+    }
+
+    return totalSpacing;
+}
+
+float Station::calculateCumulativeJunctionSpacing(const ModuleJunction& junction) const {
+    // Calculate how many junctions come before this one in the generation sequence
+    const auto& junctions = m_lsystem.getJunctions();
+
+    float totalSpacing = 0.0f;
+
+    // Find the index of the current junction
+    for (size_t i = 0; i < junctions.size(); ++i) {
+        if (&junctions[i] == &junction) {
+            // Count how many junctions were generated before this one
+            totalSpacing = m_renderParams.junctionSpacing * static_cast<float>(i);
             break;
         }
     }
@@ -164,7 +180,7 @@ glm::mat4 Station::calculateModuleTransform(const StationModule& module) const {
     const auto& junctions = m_lsystem.getJunctions();
 
     // Calculate cumulative spacing based on module generation order
-    float cumulativeSpacing = calculateCumulativeSpacing(module);
+    float cumulativeSpacing = calculateCumulativeModuleSpacing(module);
 
     if (module.isVertical) {
         // Find the target vertical junction
@@ -236,8 +252,23 @@ glm::mat4 Station::calculateModuleTransform(const StationModule& module) const {
 }
 
 glm::mat4 Station::calculateJunctionTransform(const ModuleJunction& junction) const {
-    vec3 position(junction.position.x, junction.verticalOffset, junction.position.y);
-    return translate(mat4(1.0f), position);
+    // Calculate cumulative spacing based on junction generation order
+    float cumulativeSpacing = calculateCumulativeJunctionSpacing(junction);
+
+    // Apply cumulative offset to junction position
+    vec3 basePosition(junction.position.x, junction.verticalOffset, junction.position.y);
+
+    // For junctions, we'll apply spacing as a general outward displacement from origin
+    // This creates a "spreading" effect where later junctions are pushed further out
+    vec3 directionFromOrigin = normalize(basePosition);
+    if (length(basePosition) < 0.1f) {
+        // If junction is at origin, use a default direction
+        directionFromOrigin = vec3(1.0f, 0.0f, 0.0f);
+    }
+
+    vec3 spacedPosition = basePosition + directionFromOrigin * cumulativeSpacing;
+
+    return translate(mat4(1.0f), spacedPosition);
 }
 
 void Station::renderModelWithMaterials(cgra::multi_mesh_model* model, const glm::mat4& modelTransform,
@@ -292,7 +323,7 @@ void Station::renderMultiMaterialModel(const glm::mat4& view, const glm::mat4& p
         renderModelWithMaterials(model, transform, pbrShader, view, proj, camPos);
     }
 
-    // Render all junctions (unchanged)
+    // Render all junctions with cumulative spacing
     for (const auto& junction : junctions) {
         mat4 transform = calculateJunctionTransform(junction);
         renderModelWithMaterials(m_junctionModel, transform, pbrShader, view, proj, camPos);
@@ -450,15 +481,27 @@ void Station::renderControlsPanel() {
         ImGui::Checkbox("Enable 3D View", &m_drawStation);
         ImGui::Spacing();
 
-        // Module spacing slider - now affects every module iteration
+        // Spacing controls - now affects every iteration
         if (m_drawStation) {
+            ImGui::Text("Iterative Spacing Controls");
+            ImGui::Separator();
+            ImGui::Spacing();
+
             ImGui::Text("Module Spacing (Per Iteration)");
             ImGui::PushItemWidth(-1);
             ImGui::SliderFloat("##ModuleSpacing", &m_renderParams.moduleSpacing, -5.0f, 5.0f, "%.1f");
             ImGui::PopItemWidth();
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Cumulative spacing applied to each module iteration (-5 to 5 units per module)");
             ImGui::Spacing();
-            ImGui::TextWrapped("Note: Each module in the generation sequence gets cumulative spacing applied. Module 1 = 0x spacing, Module 2 = 1x spacing, Module 3 = 2x spacing, etc.");
+
+            ImGui::Text("Junction Spacing (Per Iteration)");
+            ImGui::PushItemWidth(-1);
+            ImGui::SliderFloat("##JunctionSpacing", &m_renderParams.junctionSpacing, -5.0f, 5.0f, "%.1f");
+            ImGui::PopItemWidth();
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Cumulative spacing applied to each junction iteration (-5 to 5 units per junction)");
+            ImGui::Spacing();
+
+            ImGui::TextWrapped("Note: Each module and junction in the generation sequence gets cumulative spacing applied. First = 0x spacing, Second = 1x spacing, Third = 2x spacing, etc.");
             ImGui::Spacing();
         }
 
@@ -701,7 +744,7 @@ void Station::renderPreviewPanel() {
     ImGui::Spacing();
 
     ImGui::TextWrapped("Tip: Use the zoom controls to explore the station layout. "
-        "Each module gets cumulative spacing based on its generation order, creating visible separation between all modules.");
+        "Each module and junction gets cumulative spacing based on its generation order, creating visible separation between all components.");
 }
 
 void Station::calculateBounds(vec2& minBounds, vec2& maxBounds) const {
