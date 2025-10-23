@@ -168,11 +168,11 @@ glm::mat4 Station::calculateModuleTransform(const StationModule& module) const {
         // Rotate to point vertically
         if (pointingUp) {
             // Point up: rotate -90 around X axis
-            transform = rotate(transform, -HALF_PI, vec3(1.0f, 0.0f, 0.0f));
+            transform = rotate(transform, -HALF_PI, vec3(0.0f, 0.0f, 1.0f));
         }
         else {
             // Point down: rotate 90 around X axis
-            transform = rotate(transform, HALF_PI, vec3(1.0f, 0.0f, 0.0f));
+            transform = rotate(transform, HALF_PI, vec3(0.0f, 0.0f, 1.0f));
         }
 
         return transform;
