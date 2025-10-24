@@ -228,13 +228,10 @@ glm::mat4 Station::calculateJunctionTransform(const ModuleJunction& junction) co
 }
 
 glm::mat4 Station::calculateSolarPanelTransform(const StationModule& module, bool isLeftPanel) const {
-    // Solar panel dimensions: 4 units long, 2 units wide, 0.2 units tall
-    // Base is at origin, perpendicular to module direction on import
-
     const auto& junctions = m_lsystem.getJunctions();
 
     if (module.isVertical) {
-        // For vertical modules
+        // Find the target vertical junction to determine direction
         float endY = module.verticalOffset;
         for (const auto& junction : junctions) {
             if (length(junction.position - module.startPos) < 0.1f &&
@@ -245,59 +242,78 @@ glm::mat4 Station::calculateSolarPanelTransform(const StationModule& module, boo
         }
 
         bool pointingUp = endY > module.verticalOffset;
-        vec3 centerPos(module.startPos.x, module.verticalOffset, module.startPos.y);
-
+        glm::vec3 centerPos(module.startPos.x, module.verticalOffset, module.startPos.y);
         float moduleLength = module.length;
         float centerOffset = (moduleLength / 2.0f) + JUNCTION_RADIUS;
         centerPos.y += pointingUp ? centerOffset : -centerOffset;
 
-        // Position panel on the side (perpendicular to the module)
-        // Offset from center of module
-        float sideOffset = isLeftPanel ? -m_renderParams.solarPanelOffset : m_renderParams.solarPanelOffset;
+        // Start with translation to center position
+        glm::mat4 transform = glm::translate(glm::mat4(1.0f), centerPos);
 
-        mat4 transform = translate(mat4(1.0f), centerPos);
-
-        // For vertical modules, rotate appropriately and offset
+        // Rotate the module coordinate system to point vertically
         if (pointingUp) {
-            transform = rotate(transform, -HALF_PI, vec3(0.0f, 0.0f, 1.0f));
+            // Module points up: rotate -90° around Z axis
+            transform = glm::rotate(transform, -HALF_PI, glm::vec3(0.0f, 0.0f, 1.0f));
         }
         else {
-            transform = rotate(transform, HALF_PI, vec3(0.0f, 0.0f, 1.0f));
+            // Module points down: rotate 90° around Z axis
+            transform = glm::rotate(transform, HALF_PI, glm::vec3(0.0f, 0.0f, 1.0f));
         }
 
-        // Offset perpendicular to module direction
-        transform = translate(transform, vec3(0.0f, 0.0f, sideOffset));
+        // Now the module's forward axis is aligned with its actual direction
+        // Solar panels are offset perpendicular to the module axis (along local Z)
+        // Left panel on -Z side, right panel on +Z side
+        float sideOffset = isLeftPanel ? -m_renderParams.solarPanelOffset : m_renderParams.solarPanelOffset;
+        transform = glm::translate(transform, glm::vec3(0.0f, 0.0f, sideOffset));
+
+        // Rotate panels to face inward (toward the module)
+        // Solar panel default orientation: facing right (+Z direction)
+        // For left panel: rotate 180° around Y to face right (inward)
+        // For right panel: no rotation needed, already facing left (inward)
+        if (isLeftPanel) {
+            transform = glm::rotate(transform, PI, glm::vec3(0.0f, 1.0f, 0.0f));
+        }
 
         return transform;
     }
     else {
-        // For horizontal modules
-        vec3 fromPos3D(module.startPos.x, 0.0f, module.startPos.y);
-        vec3 toPos3D(module.endPos.x, 0.0f, module.endPos.y);
+        // Horizontal module
+        glm::vec3 fromPos3D(module.startPos.x, 0.0f, module.startPos.y);
+        glm::vec3 toPos3D(module.endPos.x, 0.0f, module.endPos.y);
 
-        vec3 direction = normalize(toPos3D - fromPos3D);
+        glm::vec3 direction = glm::normalize(toPos3D - fromPos3D);
         float moduleLength = module.length;
-
         float centerOffset = (moduleLength / 2.0f) + JUNCTION_RADIUS;
-        vec3 centerPos = fromPos3D + direction * centerOffset;
+        glm::vec3 centerPos = fromPos3D + direction * centerOffset;
 
-        // Calculate perpendicular direction (to the left/right of the module)
-        // For a direction in XZ plane, perpendicular is (-z, 0, x)
-        vec3 perpendicular = vec3(-direction.z, 0.0f, direction.x);
+        // Calculate perpendicular vector (to the left of the module direction)
+        glm::vec3 perpendicular = glm::vec3(-direction.z, 0.0f, direction.x);
 
-        // Offset position from module center
-        float sideOffset = isLeftPanel ? -m_renderParams.solarPanelOffset : m_renderParams.solarPanelOffset;
-        vec3 panelPos = centerPos + perpendicular * sideOffset;
+        // Start with translation to center position
+        glm::mat4 transform = glm::translate(glm::mat4(1.0f), centerPos);
 
-        // Start with translation
-        mat4 transform = translate(mat4(1.0f), panelPos);
-
-        // Calculate rotation angle from direction
-        // The modules point along +X axis by default, and panels are perpendicular
+        // Rotate to align with module direction
         float angle = atan2(direction.z, direction.x);
+        transform = glm::rotate(transform, angle, glm::vec3(0.0f, 1.0f, 0.0f));
 
-        // Rotate around Y axis to align with module direction
-        transform = rotate(transform, angle, vec3(0.0f, 1.0f, 0.0f));
+        // Now the module's coordinate system is aligned:
+        // +X: forward (module direction)
+        // +Y: up
+        // +Z: right (perpendicular to module, to the right)
+
+        // Offset the solar panel perpendicular to the module
+        // Left panel: -Z (to the left)
+        // Right panel: +Z (to the right)
+        float sideOffset = isLeftPanel ? -m_renderParams.solarPanelOffset : m_renderParams.solarPanelOffset;
+        transform = glm::translate(transform, glm::vec3(0.0f, 0.0f, sideOffset));
+
+        // Rotate panels to face inward (toward the module)
+        // Solar panel default orientation: facing right (+Z direction in local space)
+        // For left panel (-Z position): rotate 180° around Y to face right (inward toward module)
+        // For right panel (+Z position): no additional rotation needed, already facing left (inward)
+        if (isLeftPanel) {
+            transform = glm::rotate(transform, PI, glm::vec3(0.0f, 1.0f, 0.0f));
+        }
 
         return transform;
     }
