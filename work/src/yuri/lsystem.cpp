@@ -12,6 +12,7 @@ namespace {
     constexpr float PI = glm::pi<float>();
     constexpr int NUM_MODULE_TYPES = 4;
     constexpr float MODEL_LENGTH = 10.0f; // One model unit
+    constexpr float JUNCTION_RADIUS = 2.95f; // Half of 5.9 (junction size)
 }
 
 LSystem::LSystem() {
@@ -131,9 +132,12 @@ void LSystem::interpretSequence(const std::string& sequence) {
             float actualLength = quantizeLength(rawLength);
 
             vec2 direction(std::cos(state.angle), std::sin(state.angle));
-            vec2 newPos = state.position + direction * actualLength;
 
-            if (!isOverlapping(newPos, MODEL_LENGTH * 0.5f)) {
+            // Calculate the total distance to move, including junction radii on both ends
+            float totalDistance = actualLength + (2.0f * JUNCTION_RADIUS);
+            vec2 newPos = state.position + direction * totalDistance;
+
+            if (!isOverlapping(newPos, JUNCTION_RADIUS * 2.0f)) {
                 int moduleType = getRandomInt(0, NUM_MODULE_TYPES - 1);
                 addModule(state.position, newPos, state.angle, actualLength, moduleType, state.generation);
                 addJunction(newPos, state.generation);
@@ -208,7 +212,9 @@ void LSystem::addVerticalModule(const glm::vec2& basePos, float baseVerticalOffs
     module.verticalOffset = baseVerticalOffset;
     module.isVertical = true;
 
-    float endVerticalOffset = pointingUp ? (baseVerticalOffset + length) : (baseVerticalOffset - length);
+    // Account for junction radius in vertical direction
+    float totalVerticalDistance = length + (2.0f * JUNCTION_RADIUS);
+    float endVerticalOffset = pointingUp ? (baseVerticalOffset + totalVerticalDistance) : (baseVerticalOffset - totalVerticalDistance);
     addVerticalJunction(basePos, endVerticalOffset, generation);
 
     m_modules.push_back(module);
@@ -246,12 +252,21 @@ void LSystem::connectNearbyJunctions(const glm::vec2& newJunctionPos, int genera
     if (nearJunction >= 0) {
         const glm::vec2& targetPos = m_junctions[nearJunction].position;
         float dist = length(targetPos - newJunctionPos);
-        if (dist > 0.5f) {
-            vec2 dir = targetPos - newJunctionPos;
-            float len = quantizeLength(dist);
+        // Minimum distance should account for two junction radii
+        float minConnectionDist = JUNCTION_RADIUS * 4.0f;
+        if (dist > minConnectionDist) {
+            vec2 dir = normalize(targetPos - newJunctionPos);
+            // The actual module length is the distance minus the two junction radii
+            float actualModuleLength = dist - (2.0f * JUNCTION_RADIUS);
+            float quantizedLength = quantizeLength(actualModuleLength);
+
+            // Recalculate end position based on quantized length
+            float totalDistance = quantizedLength + (2.0f * JUNCTION_RADIUS);
+            vec2 adjustedEndPos = newJunctionPos + dir * totalDistance;
+
             float angle = std::atan2(dir.y, dir.x);
             int moduleType = 0;
-            addModule(newJunctionPos, targetPos, angle, len, moduleType, generation);
+            addModule(newJunctionPos, adjustedEndPos, angle, quantizedLength, moduleType, generation);
         }
     }
 }

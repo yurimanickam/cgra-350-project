@@ -20,6 +20,7 @@ namespace {
     constexpr float PI = glm::pi<float>();
     constexpr float MODEL_LENGTH = 10.0f;
     constexpr float JUNCTION_SIZE = 5.9f;
+    constexpr float JUNCTION_RADIUS = 2.95f; // Half of JUNCTION_SIZE
 
     // module colors for preview
     const ImU32 MODULE_COLORS[] = {
@@ -157,9 +158,9 @@ glm::mat4 Station::calculateModuleTransform(const StationModule& module) const {
         bool pointingUp = endY > module.verticalOffset;
         vec3 position(module.startPos.x, module.verticalOffset, module.startPos.y);
 
-        // Calculate center position
+        // Calculate center position accounting for junction radius
         float moduleLength = module.length;
-        float centerOffset = (moduleLength / 2.0f) + (JUNCTION_SIZE / 2.0f);
+        float centerOffset = (moduleLength / 2.0f) + JUNCTION_RADIUS;
         position.y += pointingUp ? centerOffset : -centerOffset;
 
         // Start with translation
@@ -167,11 +168,11 @@ glm::mat4 Station::calculateModuleTransform(const StationModule& module) const {
 
         // Rotate to point vertically
         if (pointingUp) {
-            // Point up: rotate -90 around X axis
+            // Point up: rotate -90 around Z axis
             transform = rotate(transform, -HALF_PI, vec3(0.0f, 0.0f, 1.0f));
         }
         else {
-            // Point down: rotate 90 around X axis
+            // Point down: rotate 90 around Z axis
             transform = rotate(transform, HALF_PI, vec3(0.0f, 0.0f, 1.0f));
         }
 
@@ -185,7 +186,9 @@ glm::mat4 Station::calculateModuleTransform(const StationModule& module) const {
         // Calculate direction and center position
         vec3 direction = normalize(toPos3D - fromPos3D);
         float moduleLength = module.length;
-        float centerOffset = (moduleLength / 2.0f) + (JUNCTION_SIZE / 2.0f);
+
+        // The module center is offset by: (module_length / 2) + junction_radius
+        float centerOffset = (moduleLength / 2.0f) + JUNCTION_RADIUS;
         vec3 position = fromPos3D + direction * centerOffset;
 
         // Start with translation
@@ -378,7 +381,7 @@ void Station::renderControlsPanel() {
         ImGui::PopItemWidth();
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("How much modules shrink each generation");
         ImGui::Spacing();
-        ImGui::TextWrapped("Note: Modules are quantized to 10, 20, or 30 units");
+        ImGui::TextWrapped("Note: Modules are quantized to 10, 20, or 30 units. Junctions (5.9 units) are placed between modules.");
         ImGui::Spacing();
     }
 
@@ -430,7 +433,7 @@ void Station::renderControlsPanel() {
     // Materials
     if (ImGui::CollapsingHeader("Model Materials", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::Spacing();
-        ImGui::TextWrapped("Modules are rendered using three different sized models (10, 20, 30 units) with PBR materials.");
+        ImGui::TextWrapped("Modules are rendered using three different sized models (10, 20, 30 units) with PBR materials. Junctions are 5.9 units.");
         ImGui::Spacing();
 
         if (m_modelsLoaded) {
@@ -656,7 +659,7 @@ void Station::renderPreviewPanel() {
     ImGui::Spacing();
 
     ImGui::TextWrapped("Tip: Use the zoom controls to explore the station layout. "
-        "Modules are rendered as appropriate sized models (10, 20, or 30 units) with junctions between them.");
+        "Modules are rendered with proper spacing accounting for junction size (5.9 units).");
 }
 
 void Station::calculateBounds(vec2& minBounds, vec2& maxBounds) const {
@@ -742,6 +745,7 @@ void Station::drawVisualization() {
 
     float moduleLineThickness = 6.0f * glm::clamp(m_previewZoom, 0.5f, 2.0f);
 
+    // Draw modules - now properly accounting for junction spacing in visualization
     for (const auto& module : modules) {
         ImU32 color = (module.moduleType >= 0 && module.moduleType < NUM_MODULE_TYPES)
             ? MODULE_COLORS[module.moduleType]
@@ -771,8 +775,14 @@ void Station::drawVisualization() {
             );
         }
         else {
-            ImVec2 p1 = worldToScreen(module.startPos);
-            ImVec2 p2 = worldToScreen(module.endPos);
+            // For horizontal modules, draw line accounting for junction radius
+            vec2 direction = normalize(module.endPos - module.startPos);
+            vec2 visualStartPos = module.startPos + direction * JUNCTION_RADIUS;
+            vec2 visualEndPos = module.endPos - direction * JUNCTION_RADIUS;
+
+            ImVec2 p1 = worldToScreen(visualStartPos);
+            ImVec2 p2 = worldToScreen(visualEndPos);
+
             draw_list->AddLine(
                 ImVec2(p1.x + 1, p1.y + 1),
                 ImVec2(p2.x + 1, p2.y + 1),
