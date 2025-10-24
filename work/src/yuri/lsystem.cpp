@@ -141,8 +141,7 @@ void LSystem::interpretSequence(const std::string& sequence) {
                 addModule(state.position, newPos, state.angle, actualLength, moduleType, state.generation);
                 addJunction(newPos, state.generation);
 
-                // FIX: Check vertical probability for EACH NEW JUNCTION independently
-                // This allows multiple vertical modules to be created along a branch
+                // Check vertical probability for EACH NEW JUNCTION independently
                 if (m_params.allowVerticalModules
                     && getRandomFloat(0.0f, 1.0f) < m_params.verticalProbability) {
 
@@ -191,6 +190,11 @@ void LSystem::addModule(const glm::vec2& startPos, const glm::vec2& endPos, floa
     module.generation = generation;
     module.verticalOffset = 0.0f;
     module.isVertical = false;
+
+    // Determine if this module should have solar panels
+    module.hasSolarPanels = m_params.enableSolarPanels &&
+        (getRandomFloat(0.0f, 1.0f) < m_params.solarPanelProbability);
+
     m_modules.push_back(module);
 }
 
@@ -205,6 +209,10 @@ void LSystem::addVerticalModule(const glm::vec2& basePos, float baseVerticalOffs
     module.generation = generation;
     module.verticalOffset = baseVerticalOffset;
     module.isVertical = true;
+
+    // Vertical modules can also have solar panels
+    module.hasSolarPanels = m_params.enableSolarPanels &&
+        (getRandomFloat(0.0f, 1.0f) < m_params.solarPanelProbability);
 
     // Account for junction radius in vertical direction
     float totalVerticalDistance = length + (2.0f * JUNCTION_RADIUS);

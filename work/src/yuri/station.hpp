@@ -16,6 +16,7 @@ namespace cgra {
 struct Rendering3DParams {
     float junctionRadius = 1.0f;
     float gapMultiplier = 0.0f;
+    float solarPanelOffset = 2.5f; // How far from center the solar panels are positioned
 };
 
 class Station {
@@ -36,7 +37,7 @@ public:
     // 3D rendering
     void render3DStation(const glm::mat4& view, const glm::mat4& proj, GLuint shader);
 
-    // Multi-material model rendering (now uses 3 different module sizes + junction)
+    // Multi-material model rendering (now uses 3 different module sizes + junction + solar panels)
     void renderMultiMaterialModel(const glm::mat4& view, const glm::mat4& proj, GLuint pbrShader, const glm::vec3& camPos);
 
     // Accessors
@@ -61,11 +62,12 @@ private:
     cgra::gl_mesh m_junctionMesh;
     bool m_meshNeedsRebuild = true;
 
-    // Multi-material model data - now with 3 module sizes + junction
+    // Multi-material model data - now with 3 module sizes + junction + solar panel
     cgra::multi_mesh_model* m_module1;      // 10 units (10x5x5)
     cgra::multi_mesh_model* m_module2;      // 20 units (20x5x5)
     cgra::multi_mesh_model* m_module3;      // 30 units (30x5x5)
     cgra::multi_mesh_model* m_junctionModel; // 5.9x5.9x5.9
+    cgra::multi_mesh_model* m_solarPanelModel; // 4x2x0.2
     std::vector<int> m_materialAssignments; // Cyclical pattern: 0,1,2,0,1,2...
     bool m_modelsLoaded = false;
 
@@ -78,9 +80,10 @@ private:
     // Get the appropriate model based on module length
     cgra::multi_mesh_model* getModelForLength(float length) const;
 
-    // Calculate transforms for modules and junctions
+    // Calculate transforms for modules, junctions, and solar panels
     glm::mat4 calculateModuleTransform(const StationModule& module) const;
     glm::mat4 calculateJunctionTransform(const ModuleJunction& junction) const;
+    glm::mat4 calculateSolarPanelTransform(const StationModule& module, bool isLeftPanel) const;
 
     // Render a model with PBR materials
     void renderModelWithMaterials(cgra::multi_mesh_model* model, const glm::mat4& modelTransform,

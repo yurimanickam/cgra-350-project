@@ -22,6 +22,11 @@ namespace {
     constexpr float JUNCTION_SIZE = 5.9f;
     constexpr float JUNCTION_RADIUS = 2.95f; // Half of JUNCTION_SIZE
 
+    // Solar panel dimensions
+    constexpr float SOLAR_PANEL_LENGTH = 4.0f;
+    constexpr float SOLAR_PANEL_WIDTH = 2.0f;
+    constexpr float SOLAR_PANEL_HEIGHT = 0.2f;
+
     // module colors for preview
     const ImU32 MODULE_COLORS[] = {
         IM_COL32(200, 200, 200, 255),
@@ -35,6 +40,7 @@ namespace {
     // junction colors
     const ImU32 JUNCTION_COLOR = IM_COL32(150, 150, 160, 255);
     const ImU32 VERTICAL_JUNCTION_COLOR = IM_COL32(255, 150, 100, 255);
+    const ImU32 SOLAR_PANEL_COLOR = IM_COL32(50, 100, 255, 255);
 
     // some ui colors
     const ImVec4 COLOR_HEADER = ImVec4(0.26f, 0.59f, 0.98f, 0.80f);
@@ -47,12 +53,13 @@ Station::Station()
     , m_module2(nullptr)
     , m_module3(nullptr)
     , m_junctionModel(nullptr)
+    , m_solarPanelModel(nullptr)
     , m_modelsLoaded(false)
 {
     initializeLSystem();
     rebuildMeshes();
 
-    // Load all module models and junction
+    // Load all module models, junction, and solar panel
     loadModuleModels();
 }
 
@@ -81,6 +88,11 @@ void Station::destroyModels() {
         delete m_junctionModel;
         m_junctionModel = nullptr;
     }
+    if (m_solarPanelModel) {
+        m_solarPanelModel->destroy();
+        delete m_solarPanelModel;
+        m_solarPanelModel = nullptr;
+    }
 }
 
 void Station::loadModuleModels() {
@@ -100,17 +112,22 @@ void Station::loadModuleModels() {
     m_junctionModel = new cgra::multi_mesh_model();
     *m_junctionModel = cgra::load_multi_mesh_model(CGRA_SRCDIR + std::string("/res/assets/junction.obj"));
 
+    // Load solar panel model
+    m_solarPanelModel = new cgra::multi_mesh_model();
+    *m_solarPanelModel = cgra::load_multi_mesh_model(CGRA_SRCDIR + std::string("/res/assets/solarPanel.obj"));
+
     if (!m_module1->mesh_groups.empty() &&
         !m_module2->mesh_groups.empty() &&
         !m_module3->mesh_groups.empty() &&
-        !m_junctionModel->mesh_groups.empty()) {
+        !m_junctionModel->mesh_groups.empty() &&
+        !m_solarPanelModel->mesh_groups.empty()) {
         m_modelsLoaded = true;
         assignCyclicalMaterials();
-        std::cout << "Station: All module models and junction loaded successfully" << std::endl;
+        std::cout << "Station: All module models, junction, and solar panel loaded successfully" << std::endl;
     }
     else {
         m_modelsLoaded = false;
-        std::cout << "Station: Failed to load one or more module models" << std::endl;
+        std::cout << "Station: Failed to load one or more models" << std::endl;
     }
 }
 
@@ -210,6 +227,82 @@ glm::mat4 Station::calculateJunctionTransform(const ModuleJunction& junction) co
     return translate(mat4(1.0f), position);
 }
 
+glm::mat4 Station::calculateSolarPanelTransform(const StationModule& module, bool isLeftPanel) const {
+    // Solar panel dimensions: 4 units long, 2 units wide, 0.2 units tall
+    // Base is at origin, perpendicular to module direction on import
+
+    const auto& junctions = m_lsystem.getJunctions();
+
+    if (module.isVertical) {
+        // For vertical modules
+        float endY = module.verticalOffset;
+        for (const auto& junction : junctions) {
+            if (length(junction.position - module.startPos) < 0.1f &&
+                std::abs(junction.verticalOffset - module.verticalOffset) > 0.1f) {
+                endY = junction.verticalOffset;
+                break;
+            }
+        }
+
+        bool pointingUp = endY > module.verticalOffset;
+        vec3 centerPos(module.startPos.x, module.verticalOffset, module.startPos.y);
+
+        float moduleLength = module.length;
+        float centerOffset = (moduleLength / 2.0f) + JUNCTION_RADIUS;
+        centerPos.y += pointingUp ? centerOffset : -centerOffset;
+
+        // Position panel on the side (perpendicular to the module)
+        // Offset from center of module
+        float sideOffset = isLeftPanel ? -m_renderParams.solarPanelOffset : m_renderParams.solarPanelOffset;
+
+        mat4 transform = translate(mat4(1.0f), centerPos);
+
+        // For vertical modules, rotate appropriately and offset
+        if (pointingUp) {
+            transform = rotate(transform, -HALF_PI, vec3(0.0f, 0.0f, 1.0f));
+        }
+        else {
+            transform = rotate(transform, HALF_PI, vec3(0.0f, 0.0f, 1.0f));
+        }
+
+        // Offset perpendicular to module direction
+        transform = translate(transform, vec3(0.0f, 0.0f, sideOffset));
+
+        return transform;
+    }
+    else {
+        // For horizontal modules
+        vec3 fromPos3D(module.startPos.x, 0.0f, module.startPos.y);
+        vec3 toPos3D(module.endPos.x, 0.0f, module.endPos.y);
+
+        vec3 direction = normalize(toPos3D - fromPos3D);
+        float moduleLength = module.length;
+
+        float centerOffset = (moduleLength / 2.0f) + JUNCTION_RADIUS;
+        vec3 centerPos = fromPos3D + direction * centerOffset;
+
+        // Calculate perpendicular direction (to the left/right of the module)
+        // For a direction in XZ plane, perpendicular is (-z, 0, x)
+        vec3 perpendicular = vec3(-direction.z, 0.0f, direction.x);
+
+        // Offset position from module center
+        float sideOffset = isLeftPanel ? -m_renderParams.solarPanelOffset : m_renderParams.solarPanelOffset;
+        vec3 panelPos = centerPos + perpendicular * sideOffset;
+
+        // Start with translation
+        mat4 transform = translate(mat4(1.0f), panelPos);
+
+        // Calculate rotation angle from direction
+        // The modules point along +X axis by default, and panels are perpendicular
+        float angle = atan2(direction.z, direction.x);
+
+        // Rotate around Y axis to align with module direction
+        transform = rotate(transform, angle, vec3(0.0f, 1.0f, 0.0f));
+
+        return transform;
+    }
+}
+
 void Station::renderModelWithMaterials(cgra::multi_mesh_model* model, const glm::mat4& modelTransform,
     GLuint pbrShader, const glm::mat4& view, const glm::mat4& proj,
     const glm::vec3& camPos) {
@@ -260,6 +353,17 @@ void Station::renderMultiMaterialModel(const glm::mat4& view, const glm::mat4& p
         cgra::multi_mesh_model* model = getModelForLength(module.length);
         mat4 transform = calculateModuleTransform(module);
         renderModelWithMaterials(model, transform, pbrShader, view, proj, camPos);
+
+        // Render solar panels if this module has them
+        if (module.hasSolarPanels && m_solarPanelModel) {
+            // Render left panel
+            mat4 leftPanelTransform = calculateSolarPanelTransform(module, true);
+            renderModelWithMaterials(m_solarPanelModel, leftPanelTransform, pbrShader, view, proj, camPos);
+
+            // Render right panel
+            mat4 rightPanelTransform = calculateSolarPanelTransform(module, false);
+            renderModelWithMaterials(m_solarPanelModel, rightPanelTransform, pbrShader, view, proj, camPos);
+        }
     }
 
     // Render all junctions
@@ -388,29 +492,41 @@ void Station::renderControlsPanel() {
     // Topology
     if (ImGui::CollapsingHeader("Topology & Connections", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::Spacing();
-        // REMOVED Loop Connections
-        // ImGui::Checkbox("Allow Loop Connections", &params.allowLoops);
-        // if (ImGui::IsItemHovered()) ImGui::SetTooltip("Enable additional connecting modules between nearby junctions");
-        // if (params.allowLoops) {
-        //     ImGui::Spacing();
-        //     ImGui::Text("Loop Probability");
-        //     ImGui::PushItemWidth(-1);
-        //     needsRegeneration |= ImGui::SliderFloat("##ConnProb", &params.connectionProbability, 0.0f, 0.5f, "%.2f");
-        //     ImGui::PopItemWidth();
-        //     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Chance of creating an additional connecting module");
-        // }
-        ImGui::Spacing();
-        ImGui::Separator();
-        ImGui::Spacing();
         needsRegeneration |= ImGui::Checkbox("Allow Vertical Modules", &params.allowVerticalModules);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Enable modules that extend upward or downward");
         if (params.allowVerticalModules) {
             ImGui::Spacing();
             ImGui::Text("Vertical Probability");
             ImGui::PushItemWidth(-1);
-            needsRegeneration |= ImGui::SliderFloat("##VertProb", &params.verticalProbability, 0.0f, 1.0f, "%.2f"); // RANGE INCREASED TO 1.0f
+            needsRegeneration |= ImGui::SliderFloat("##VertProb", &params.verticalProbability, 0.0f, 1.0f, "%.2f");
             ImGui::PopItemWidth();
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Chance of creating a vertical module");
+        }
+        ImGui::Spacing();
+    }
+
+    // Solar Panels
+    if (ImGui::CollapsingHeader("Solar Panels", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::Spacing();
+        needsRegeneration |= ImGui::Checkbox("Enable Solar Panels", &params.enableSolarPanels);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Add solar panels to modules");
+
+        if (params.enableSolarPanels) {
+            ImGui::Spacing();
+            ImGui::Text("Solar Panel Probability");
+            ImGui::PushItemWidth(-1);
+            needsRegeneration |= ImGui::SliderFloat("##SolarProb", &params.solarPanelProbability, 0.0f, 1.0f, "%.2f");
+            ImGui::PopItemWidth();
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Chance of a module having solar panels");
+
+            ImGui::Spacing();
+            ImGui::Text("Panel Offset from Center");
+            ImGui::PushItemWidth(-1);
+            if (ImGui::SliderFloat("##PanelOffset", &m_renderParams.solarPanelOffset, 1.0f, 5.0f, "%.1f units")) {
+                // No regeneration needed, just visual update
+            }
+            ImGui::PopItemWidth();
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Distance from module center to solar panels");
         }
         ImGui::Spacing();
     }
@@ -434,7 +550,7 @@ void Station::renderControlsPanel() {
     // Materials
     if (ImGui::CollapsingHeader("Model Materials", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::Spacing();
-        ImGui::TextWrapped("Modules are rendered using three different sized models (10, 20, 30 units) with PBR materials. Junctions are 5.9 units.");
+        ImGui::TextWrapped("Modules are rendered using three different sized models (10, 20, 30 units) with PBR materials. Junctions are 5.9 units. Solar panels are 4x2x0.2 units.");
         ImGui::Spacing();
 
         if (m_modelsLoaded) {
@@ -443,6 +559,7 @@ void Station::renderControlsPanel() {
             ImGui::BulletText("module2.obj (20 units)");
             ImGui::BulletText("module3.obj (30 units)");
             ImGui::BulletText("junction.obj (5.9 units)");
+            ImGui::BulletText("solarPanel.obj (4x2x0.2 units)");
             ImGui::Spacing();
             ImGui::Text("Materials cycle: 0=Gold, 1=Plastic, 2=Cloth");
         }
@@ -488,12 +605,14 @@ void Station::renderControlsPanel() {
         ImGui::NextColumn();
 
         int verticalCount = 0;
+        int solarPanelCount = 0;
         int length10Count = 0;
         int length20Count = 0;
         int length30Count = 0;
 
         for (const auto& module : modules) {
             if (module.isVertical) verticalCount++;
+            if (module.hasSolarPanels) solarPanelCount++;
             if (module.length <= 15.0f) length10Count++;
             else if (module.length <= 25.0f) length20Count++;
             else length30Count++;
@@ -502,6 +621,11 @@ void Station::renderControlsPanel() {
         ImGui::Text("Vertical Modules:");
         ImGui::NextColumn();
         ImGui::Text("%d", verticalCount);
+        ImGui::NextColumn();
+
+        ImGui::Text("With Solar Panels:");
+        ImGui::NextColumn();
+        ImGui::Text("%d", solarPanelCount);
         ImGui::NextColumn();
 
         ImGui::Text("10-unit Modules:");
@@ -649,6 +773,17 @@ void Station::renderPreviewPanel() {
     ImGui::Text("Vertical Junction");
     ImGui::NextColumn();
 
+    cursor = ImGui::GetCursorScreenPos();
+    draw_list->AddRectFilled(
+        ImVec2(cursor.x, cursor.y),
+        ImVec2(cursor.x + legendCircleSize * 2, cursor.y + legendCircleSize * 2),
+        SOLAR_PANEL_COLOR
+    );
+    ImGui::Dummy(ImVec2(legendCircleSize * 2, legendCircleSize * 2));
+    ImGui::SameLine();
+    ImGui::Text("Solar Panels");
+    ImGui::NextColumn();
+
     ImGui::Columns(1);
     ImGui::Spacing();
     ImGui::Separator();
@@ -660,11 +795,13 @@ void Station::renderPreviewPanel() {
     ImGui::Spacing();
 
     ImGui::TextWrapped("Tip: Use the zoom controls to explore the station layout. "
-        "Modules are rendered with proper spacing accounting for junction size (5.9 units).");
+        "Modules are rendered with proper spacing accounting for junction size (5.9 units). "
+        "Solar panels extend from modules when enabled.");
 }
 
 void Station::calculateBounds(vec2& minBounds, vec2& maxBounds) const {
     const auto& junctions = m_lsystem.getJunctions();
+    const auto& modules = m_lsystem.getModules();
 
     minBounds = vec2(FLT_MAX);
     maxBounds = vec2(-FLT_MAX);
@@ -672,6 +809,21 @@ void Station::calculateBounds(vec2& minBounds, vec2& maxBounds) const {
         minBounds = glm::min(minBounds, junction.position);
         maxBounds = glm::max(maxBounds, junction.position);
     }
+
+    // Account for solar panels extending beyond module bounds
+    for (const auto& module : modules) {
+        if (module.hasSolarPanels && !module.isVertical) {
+            vec2 direction = normalize(module.endPos - module.startPos);
+            vec2 perpendicular(-direction.y, direction.x);
+            vec2 extension = perpendicular * m_renderParams.solarPanelOffset;
+
+            minBounds = glm::min(minBounds, module.startPos + extension);
+            maxBounds = glm::max(maxBounds, module.startPos + extension);
+            minBounds = glm::min(minBounds, module.startPos - extension);
+            maxBounds = glm::max(maxBounds, module.startPos - extension);
+        }
+    }
+
     vec2 padding(25.0f);
     minBounds -= padding;
     maxBounds += padding;

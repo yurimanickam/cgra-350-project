@@ -15,6 +15,7 @@ struct StationModule {
     int generation;          // L-System generation level
     float verticalOffset;    // Y-axis offset for vertical modules
     bool isVertical;         // True if module points up/down
+    bool hasSolarPanels;     // True if this module has solar panels
 
     StationModule()
         : startPos(0.0f)
@@ -25,6 +26,7 @@ struct StationModule {
         , generation(0)
         , verticalOffset(0.0f)
         , isVertical(false)
+        , hasSolarPanels(false)
     {
     }
 };
@@ -57,6 +59,8 @@ struct LSystemParams {
     float minLength = 10.0f;       // Minimum module length
     bool allowVerticalModules = true;
     float verticalProbability = 0.35f; // Probability for each junction to spawn a vertical module
+    bool enableSolarPanels = false;    // Enable solar panels on modules
+    float solarPanelProbability = 0.3f; // Probability of a module having solar panels
     int seed = 1701;
 };
 
@@ -84,7 +88,7 @@ private:
     std::string m_currentSequence;
     std::mt19937 m_rng;
 
-    // Turtle state - REMOVED hasVerticalChild flag
+    // Turtle state
     struct TurtleState {
         glm::vec2 position;
         float angle;
