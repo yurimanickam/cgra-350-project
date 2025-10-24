@@ -142,6 +142,7 @@ void LSystem::interpretSequence(const std::string& sequence) {
                 addModule(state.position, newPos, state.angle, actualLength, moduleType, state.generation);
                 addJunction(newPos, state.generation);
 
+                // INCREASE vertical module probability
                 if (m_params.allowVerticalModules
                     && !state.hasVerticalChild
                     && getRandomFloat(0.0f, 1.0f) < m_params.verticalProbability) {
@@ -153,10 +154,11 @@ void LSystem::interpretSequence(const std::string& sequence) {
                     state.hasVerticalChild = true;
                 }
 
-                if (m_params.allowLoops
-                    && getRandomFloat(0.0f, 1.0f) < m_params.connectionProbability) {
-                    connectNearbyJunctions(newPos, state.generation);
-                }
+                // *** REMOVED LOOP CONNECTIONS ***
+                // if (m_params.allowLoops
+                //     && getRandomFloat(0.0f, 1.0f) < m_params.connectionProbability) {
+                //     connectNearbyJunctions(newPos, state.generation);
+                // }
 
                 state.position = newPos;
                 state.length *= m_params.lengthDecay;
@@ -246,30 +248,30 @@ void LSystem::addVerticalJunction(const glm::vec2& position, float verticalOffse
     m_junctions.push_back(junction);
 }
 
-// Connect nearby junctions
-void LSystem::connectNearbyJunctions(const glm::vec2& newJunctionPos, int generation) {
-    int nearJunction = findNearestJunction(newJunctionPos, m_params.baseLength * 2.0f);
-    if (nearJunction >= 0) {
-        const glm::vec2& targetPos = m_junctions[nearJunction].position;
-        float dist = length(targetPos - newJunctionPos);
-        // Minimum distance should account for two junction radii
-        float minConnectionDist = JUNCTION_RADIUS * 4.0f;
-        if (dist > minConnectionDist) {
-            vec2 dir = normalize(targetPos - newJunctionPos);
-            // The actual module length is the distance minus the two junction radii
-            float actualModuleLength = dist - (2.0f * JUNCTION_RADIUS);
-            float quantizedLength = quantizeLength(actualModuleLength);
+// *** REMOVED LOOP CONNECTIONS ***
+// void LSystem::connectNearbyJunctions(const glm::vec2& newJunctionPos, int generation) {
+//     int nearJunction = findNearestJunction(newJunctionPos, m_params.baseLength * 2.0f);
+//     if (nearJunction >= 0) {
+//         const glm::vec2& targetPos = m_junctions[nearJunction].position;
+//         float dist = length(targetPos - newJunctionPos);
+//         // Minimum distance should account for two junction radii
+//         float minConnectionDist = JUNCTION_RADIUS * 4.0f;
+//         if (dist > minConnectionDist) {
+//             vec2 dir = normalize(targetPos - newJunctionPos);
+//             // The actual module length is the distance minus the two junction radii
+//             float actualModuleLength = dist - (2.0f * JUNCTION_RADIUS);
+//             float quantizedLength = quantizeLength(actualModuleLength);
 
-            // Recalculate end position based on quantized length
-            float totalDistance = quantizedLength + (2.0f * JUNCTION_RADIUS);
-            vec2 adjustedEndPos = newJunctionPos + dir * totalDistance;
+//             // Recalculate end position based on quantized length
+//             float totalDistance = quantizedLength + (2.0f * JUNCTION_RADIUS);
+//             vec2 adjustedEndPos = newJunctionPos + dir * totalDistance;
 
-            float angle = std::atan2(dir.y, dir.x);
-            int moduleType = 0;
-            addModule(newJunctionPos, adjustedEndPos, angle, quantizedLength, moduleType, generation);
-        }
-    }
-}
+//             float angle = std::atan2(dir.y, dir.x);
+//             int moduleType = 0;
+//             addModule(newJunctionPos, adjustedEndPos, angle, quantizedLength, moduleType, generation);
+//         }
+//     }
+// }
 
 // Check overlap
 bool LSystem::isOverlapping(const vec2& pos, float minDist) const {

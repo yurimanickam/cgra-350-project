@@ -388,16 +388,17 @@ void Station::renderControlsPanel() {
     // Topology
     if (ImGui::CollapsingHeader("Topology & Connections", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::Spacing();
-        ImGui::Checkbox("Allow Loop Connections", &params.allowLoops);
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Enable additional connecting modules between nearby junctions");
-        if (params.allowLoops) {
-            ImGui::Spacing();
-            ImGui::Text("Loop Probability");
-            ImGui::PushItemWidth(-1);
-            needsRegeneration |= ImGui::SliderFloat("##ConnProb", &params.connectionProbability, 0.0f, 0.5f, "%.2f");
-            ImGui::PopItemWidth();
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Chance of creating an additional connecting module");
-        }
+        // REMOVED Loop Connections
+        // ImGui::Checkbox("Allow Loop Connections", &params.allowLoops);
+        // if (ImGui::IsItemHovered()) ImGui::SetTooltip("Enable additional connecting modules between nearby junctions");
+        // if (params.allowLoops) {
+        //     ImGui::Spacing();
+        //     ImGui::Text("Loop Probability");
+        //     ImGui::PushItemWidth(-1);
+        //     needsRegeneration |= ImGui::SliderFloat("##ConnProb", &params.connectionProbability, 0.0f, 0.5f, "%.2f");
+        //     ImGui::PopItemWidth();
+        //     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Chance of creating an additional connecting module");
+        // }
         ImGui::Spacing();
         ImGui::Separator();
         ImGui::Spacing();
@@ -407,7 +408,7 @@ void Station::renderControlsPanel() {
             ImGui::Spacing();
             ImGui::Text("Vertical Probability");
             ImGui::PushItemWidth(-1);
-            needsRegeneration |= ImGui::SliderFloat("##VertProb", &params.verticalProbability, 0.0f, 0.5f, "%.2f");
+            needsRegeneration |= ImGui::SliderFloat("##VertProb", &params.verticalProbability, 0.0f, 1.0f, "%.2f"); // RANGE INCREASED TO 1.0f
             ImGui::PopItemWidth();
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Chance of creating a vertical module");
         }

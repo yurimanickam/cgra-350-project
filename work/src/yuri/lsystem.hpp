@@ -49,16 +49,17 @@ struct LSystemRule {
     float probability;
 };
 
+// *** REMOVED LOOP CONNECTION parameters ***
 struct LSystemParams {
     int iterations = 3;
     float baseLength = 10.0f;      // Base module length (10, 20, or 30)
     float baseAngle = 90.0f;
     float lengthDecay = 0.8f;
-    float connectionProbability = 0.2f;
+    // float connectionProbability = 0.2f; // REMOVED
     float minLength = 10.0f;       // Minimum module length
-    bool allowLoops = true;
+    // bool allowLoops = true;       // REMOVED
     bool allowVerticalModules = true;
-    float verticalProbability = 0.15f;
+    float verticalProbability = 0.35f; // *** Increased from 0.15f for more vertical modules ***
     int seed = 1701;
 };
 
@@ -108,7 +109,7 @@ private:
     void addJunction(const glm::vec2& position, int generation);
     void addVerticalModule(const glm::vec2& basePos, float baseVerticalOffset, bool pointingUp, float length, int moduleType, int generation);
     void addVerticalJunction(const glm::vec2& position, float verticalOffset, int generation);
-    void connectNearbyJunctions(const glm::vec2& newJunctionPos, int generation);
+    // void connectNearbyJunctions(const glm::vec2& newJunctionPos, int generation); // REMOVED
     bool isOverlapping(const glm::vec2& pos, float minDist) const;
     int findNearestJunction(const glm::vec2& position, float maxDistance) const;
 
