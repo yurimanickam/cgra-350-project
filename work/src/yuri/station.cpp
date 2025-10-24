@@ -17,17 +17,12 @@
 using namespace glm;
 
 namespace {
-    // Mathematical constants
     constexpr float HALF_PI = glm::half_pi<float>();
     constexpr float PI = glm::pi<float>();
-
-    // Station dimensions
     constexpr float JUNCTION_RADIUS = 2.95f;
-
-    // Material names for UI
     const char* MATERIAL_NAMES[] = { "Gold", "Plastic", "Cloth", "Panel", "Solar", "Metal" };
 
-    // UI styling
+    // color stuff for ui
     const ImVec4 COLOR_HEADER = ImVec4(0.26f, 0.59f, 0.98f, 0.80f);
     const ImVec4 COLOR_BUTTON_PRIMARY = ImVec4(0.2f, 0.6f, 0.9f, 1.0f);
     const ImVec4 COLOR_BUTTON_PRIMARY_HOVER = ImVec4(0.3f, 0.7f, 1.0f, 1.0f);
@@ -45,18 +40,14 @@ namespace {
     const ImVec4 COLOR_BUTTON_INACTIVE_HOVER = ImVec4(0.7f, 0.7f, 0.7f, 1.0f);
     const ImVec4 COLOR_BUTTON_INACTIVE_ACTIVE = ImVec4(0.5f, 0.5f, 0.5f, 1.0f);
 
-    /**
-     * @brief Helper function to apply button color scheme
-     */
+    // set button colors
     void PushButtonColors(const ImVec4& base, const ImVec4& hover, const ImVec4& active) {
         ImGui::PushStyleColor(ImGuiCol_Button, base);
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, hover);
         ImGui::PushStyleColor(ImGuiCol_ButtonActive, active);
     }
 
-    /**
-     * @brief Helper function to load a 3D model from file
-     */
+    // load a 3d model
     cgra::multi_mesh_model* LoadModel(const std::string& filename) {
         const std::string basePath = CGRA_SRCDIR + std::string("/res/assets/");
         auto* model = new cgra::multi_mesh_model();
@@ -64,9 +55,7 @@ namespace {
         return model;
     }
 
-    /**
-     * @brief Helper function to safely destroy a model
-     */
+    // kill a model
     void DestroyModel(cgra::multi_mesh_model*& model) {
         if (model) {
             model->destroy();
@@ -76,16 +65,19 @@ namespace {
     }
 }
 
+// constructor
 Station::Station() {
     initializeLSystem();
     initializeDefaultMaterials();
     loadModuleModels();
 }
 
+// destructor
 Station::~Station() {
     destroyModels();
 }
 
+// kill all models
 void Station::destroyModels() {
     DestroyModel(m_module1);
     DestroyModel(m_module2);
@@ -94,15 +86,16 @@ void Station::destroyModels() {
     DestroyModel(m_solarPanelModel);
 }
 
+// set default materials for stuff
 void Station::initializeDefaultMaterials() {
-    // Assign sensible default materials to each object type
-    m_module1Materials = { 5, 1, 2, 3 };        // metal, plastic, cloth, panel
-    m_module2Materials = { 5, 1, 2, 3 };        // metal, plastic, cloth, panel
-    m_module3Materials = { 5, 1, 2, 3 };        // metal, plastic, cloth, panel
-    m_junctionMaterials = { 1, 0, 2, 4 };       // plastic, gold, cloth, solar
-    m_solarPanelMaterials = { 4, 0, 0, 0 };     // solar material
+    m_module1Materials = { 5, 1, 2, 3 };
+    m_module2Materials = { 5, 1, 2, 3 };
+    m_module3Materials = { 5, 1, 2, 3 };
+    m_junctionMaterials = { 1, 0, 2, 4 };
+    m_solarPanelMaterials = { 4, 0, 0, 0 };
 }
 
+// random materials for everything
 void Station::randomizeMaterials() {
     std::random_device rd;
     std::mt19937 gen(rd());
@@ -123,11 +116,13 @@ void Station::randomizeMaterials() {
     std::cout << "Station: Randomized all material assignments\n";
 }
 
+// put materials back to default
 void Station::resetMaterials() {
     initializeDefaultMaterials();
     std::cout << "Station: Reset all material assignments to default\n";
 }
 
+// load models for modules
 void Station::loadModuleModels() {
     destroyModels();
 
@@ -146,9 +141,10 @@ void Station::loadModuleModels() {
     std::cout << "Station: " << (m_modelsLoaded ? "All models loaded successfully" : "Failed to load one or more models") << "\n";
 }
 
+// get material index for the object type
 int Station::getMaterialIndexForObject(ObjectType objType, size_t materialSlot) const {
     if (materialSlot >= NUM_MATERIALS_PER_OBJECT) {
-        return 1; // Default to plastic
+        return 1;
     }
 
     switch (objType) {
@@ -161,23 +157,25 @@ int Station::getMaterialIndexForObject(ObjectType objType, size_t materialSlot) 
     }
 }
 
+// pick model for a given length
 cgra::multi_mesh_model* Station::getModelForLength(float length) const {
     if (length <= 15.0f) return m_module1;
     if (length <= 25.0f) return m_module2;
     return m_module3;
 }
 
+// pick object type for a given length
 Station::ObjectType Station::getObjectTypeForLength(float length) const {
     if (length <= 15.0f) return ObjectType::MODULE1;
     if (length <= 25.0f) return ObjectType::MODULE2;
     return ObjectType::MODULE3;
 }
 
+// calc transform for module
 glm::mat4 Station::calculateModuleTransform(const StationModule& module) const {
     const auto& junctions = m_lsystem.getJunctions();
 
     if (module.isVertical) {
-        // Find the vertical endpoint
         float endY = module.verticalOffset;
         for (const auto& junction : junctions) {
             if (length(junction.position - module.startPos) < 0.1f &&
@@ -190,7 +188,6 @@ glm::mat4 Station::calculateModuleTransform(const StationModule& module) const {
         bool pointingUp = endY > module.verticalOffset;
         vec3 position(module.startPos.x, module.verticalOffset, module.startPos.y);
 
-        // Offset by module length and junction radius
         float centerOffset = (module.length / 2.0f) + JUNCTION_RADIUS;
         position.y += pointingUp ? centerOffset : -centerOffset;
 
@@ -200,7 +197,6 @@ glm::mat4 Station::calculateModuleTransform(const StationModule& module) const {
         return transform;
     }
     else {
-        // Horizontal module
         vec3 fromPos3D(module.startPos.x, 0.0f, module.startPos.y);
         vec3 toPos3D(module.endPos.x, 0.0f, module.endPos.y);
         vec3 direction = normalize(toPos3D - fromPos3D);
@@ -216,11 +212,13 @@ glm::mat4 Station::calculateModuleTransform(const StationModule& module) const {
     }
 }
 
+// calc junction transform
 glm::mat4 Station::calculateJunctionTransform(const ModuleJunction& junction) const {
     vec3 position(junction.position.x, junction.verticalOffset, junction.position.y);
     return translate(mat4(1.0f), position);
 }
 
+// calc solar panel transform
 glm::mat4 Station::calculateSolarPanelTransform(const StationModule& module, bool isLeftPanel) const {
     const auto& junctions = m_lsystem.getJunctions();
 
@@ -275,6 +273,7 @@ glm::mat4 Station::calculateSolarPanelTransform(const StationModule& module, boo
     }
 }
 
+// draw a model with materials
 void Station::renderModelWithMaterials(cgra::multi_mesh_model* model, ObjectType objType,
     const glm::mat4& modelTransform, GLuint pbrShader,
     const glm::mat4& view, const glm::mat4& proj,
@@ -289,7 +288,7 @@ void Station::renderModelWithMaterials(cgra::multi_mesh_model* model, ObjectType
     glUniformMatrix3fv(glGetUniformLocation(pbrShader, "normalMatrix"), 1, GL_FALSE,
         value_ptr(transpose(inverse(mat3(modelTransform)))));
 
-    // Render each material group
+    // draw each mesh group
     for (size_t i = 0; i < model->mesh_groups.size() && i < NUM_MATERIALS_PER_OBJECT; ++i) {
         int materialIndex = getMaterialIndexForObject(objType, i);
 
@@ -307,6 +306,7 @@ void Station::renderModelWithMaterials(cgra::multi_mesh_model* model, ObjectType
     }
 }
 
+// draw the full station
 void Station::renderMultiMaterialModel(const glm::mat4& view, const glm::mat4& proj,
     GLuint pbrShader, const glm::vec3& camPos) {
     if (!m_drawStation || !m_modelsLoaded) {
@@ -316,14 +316,13 @@ void Station::renderMultiMaterialModel(const glm::mat4& view, const glm::mat4& p
     const auto& modules = m_lsystem.getModules();
     const auto& junctions = m_lsystem.getJunctions();
 
-    // Render modules and their solar panels
+    // draw modules + solar panels
     for (const auto& module : modules) {
         cgra::multi_mesh_model* model = getModelForLength(module.length);
         ObjectType objType = getObjectTypeForLength(module.length);
         mat4 transform = calculateModuleTransform(module);
         renderModelWithMaterials(model, objType, transform, pbrShader, view, proj, camPos);
 
-        // Render solar panels if present
         if (module.hasSolarPanels && m_solarPanelModel) {
             mat4 leftPanelTransform = calculateSolarPanelTransform(module, true);
             renderModelWithMaterials(m_solarPanelModel, ObjectType::SOLAR_PANEL,
@@ -335,7 +334,7 @@ void Station::renderMultiMaterialModel(const glm::mat4& view, const glm::mat4& p
         }
     }
 
-    // Render junctions
+    // draw junctions
     for (const auto& junction : junctions) {
         mat4 transform = calculateJunctionTransform(junction);
         renderModelWithMaterials(m_junctionModel, ObjectType::JUNCTION,
@@ -343,14 +342,17 @@ void Station::renderMultiMaterialModel(const glm::mat4& view, const glm::mat4& p
     }
 }
 
+// init the lsystem
 void Station::initializeLSystem() {
     m_lsystem.initialize();
 }
 
+// regen lsystem
 void Station::regenerate() {
     m_lsystem.regenerate();
 }
 
+// show material controls for an object
 void Station::renderMaterialControls(const char* objectName,
     std::array<int, NUM_MATERIALS_PER_OBJECT>& materials) {
     ImGui::PushID(objectName);
@@ -376,11 +378,11 @@ void Station::renderMaterialControls(const char* objectName,
     ImGui::PopID();
 }
 
+// main ui for station controls
 void Station::renderControlsPanel() {
     bool needsRegeneration = false;
     LSystemParams& params = m_lsystem.getParams();
 
-    // Header
     ImGui::PushStyleColor(ImGuiCol_Header, COLOR_HEADER);
     ImGui::Spacing();
     ImGui::Text("L-SYSTEM SPACE STATION GENERATOR");
@@ -388,7 +390,7 @@ void Station::renderControlsPanel() {
     ImGui::PopStyleColor();
     ImGui::Spacing();
 
-    // Main toggle button
+    // show/hide station
     PushButtonColors(COLOR_BUTTON_PRIMARY, COLOR_BUTTON_PRIMARY_HOVER, COLOR_BUTTON_PRIMARY_ACTIVE);
     if (ImGui::Button(m_drawStation ? "Disable 3D Space Station" : "Enable 3D Space Station", ImVec2(-1, 40))) {
         m_drawStation = !m_drawStation;
@@ -402,7 +404,7 @@ void Station::renderControlsPanel() {
         return;
     }
 
-    // Generation Parameters
+    // generation params
     if (ImGui::CollapsingHeader("Generation Parameters", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::Spacing();
 
@@ -439,11 +441,11 @@ void Station::renderControlsPanel() {
         ImGui::Spacing();
     }
 
-    // Inline toggle buttons
+    // buttons for toggles
     ImGui::Spacing();
     float buttonWidth = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x * 2) / 3.0f;
 
-    // Vertical Modules Toggle
+    // vertical modules toggle
     PushButtonColors(
         params.allowVerticalModules ? COLOR_BUTTON_SUCCESS : COLOR_BUTTON_INACTIVE,
         params.allowVerticalModules ? COLOR_BUTTON_SUCCESS_HOVER : COLOR_BUTTON_INACTIVE_HOVER,
@@ -457,7 +459,7 @@ void Station::renderControlsPanel() {
     ImGui::PopStyleColor(3);
     ImGui::SameLine();
 
-    // Solar Panels Toggle
+    // solar panels toggle
     PushButtonColors(
         params.enableSolarPanels ? COLOR_BUTTON_SUCCESS : COLOR_BUTTON_INACTIVE,
         params.enableSolarPanels ? COLOR_BUTTON_SUCCESS_HOVER : COLOR_BUTTON_INACTIVE_HOVER,
@@ -471,7 +473,7 @@ void Station::renderControlsPanel() {
     ImGui::PopStyleColor(3);
     ImGui::SameLine();
 
-    // Randomize Seed Button
+    // random seed
     PushButtonColors(COLOR_BUTTON_WARNING, COLOR_BUTTON_WARNING_HOVER, COLOR_BUTTON_WARNING_ACTIVE);
     if (ImGui::Button("Randomise Seed", ImVec2(buttonWidth, 30))) {
         std::random_device rd;
@@ -486,7 +488,7 @@ void Station::renderControlsPanel() {
     ImGui::Separator();
     ImGui::Spacing();
 
-    // Model Parameters
+    // model params
     if (ImGui::CollapsingHeader("Model Parameters", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::Spacing();
 
@@ -516,7 +518,7 @@ void Station::renderControlsPanel() {
         }
     }
 
-    // Material Parameters
+    // material params
     if (ImGui::CollapsingHeader("Material Parameters", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::Spacing();
 
@@ -558,7 +560,7 @@ void Station::renderControlsPanel() {
         ImGui::Spacing();
     }
 
-    // Statistics
+    // stats
     if (ImGui::CollapsingHeader("Statistics", ImGuiTreeNodeFlags_DefaultOpen)) {
         const auto& modules = m_lsystem.getModules();
         const auto& junctions = m_lsystem.getJunctions();
@@ -589,7 +591,7 @@ void Station::renderControlsPanel() {
         ImGui::Spacing();
     }
 
-    // OBJ Statistics
+    // obj stats
     if (ImGui::CollapsingHeader("OBJ Statistics", ImGuiTreeNodeFlags_DefaultOpen)) {
         const auto& modules = m_lsystem.getModules();
 
@@ -627,6 +629,7 @@ void Station::renderControlsPanel() {
     }
 }
 
+// draw the gui
 void Station::renderGUI() {
     ImGui::SetNextWindowPos(ImVec2(5, 540), ImGuiSetCond_Once);
     ImGui::SetNextWindowSize(ImVec2(400, 460), ImGuiSetCond_Once);
