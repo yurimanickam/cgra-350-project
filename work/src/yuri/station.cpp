@@ -38,7 +38,7 @@ namespace {
 
     constexpr int NUM_MODULE_TYPES = 4;
     constexpr int NUM_MATERIALS_PER_OBJECT = 4;
-	constexpr int NUM_PBR_MATERIALS = 6; // 0=gold, 1=plastic, 2=cloth, 3=panel, 4=solar, 5=metal
+    constexpr int NUM_PBR_MATERIALS = 6; // 0=gold, 1=plastic, 2=cloth, 3=panel, 4=solar, 5=metal
 
     // junction colors
     const ImU32 JUNCTION_COLOR = IM_COL32(150, 150, 160, 255);
@@ -51,7 +51,7 @@ namespace {
     const ImVec4 COLOR_HOVER = ImVec4(0.26f, 0.59f, 0.98f, 0.67f);
 
     // Material names for UI
-    const char* MATERIAL_NAMES[] = { "Gold", "Plastic", "Cloth", "Panel", "Solar", "Metal"};
+    const char* MATERIAL_NAMES[] = { "Gold", "Plastic", "Cloth", "Panel", "Solar", "Metal" };
 }
 
 Station::Station()
@@ -373,15 +373,15 @@ void Station::renderModelWithMaterials(cgra::multi_mesh_model* model, ObjectType
         case 2:
             bindPBRTextures(cloth);
             break;
-		case 3:
-			bindPBRTextures(panel);
-			break;
-		case 4:
-			bindPBRTextures(solar);
-			break;
-		case 5:
-			bindPBRTextures(metal);
-			break;
+        case 3:
+            bindPBRTextures(panel);
+            break;
+        case 4:
+            bindPBRTextures(solar);
+            break;
+        case 5:
+            bindPBRTextures(metal);
+            break;
 
         default:
             bindPBRTextures(plastic);
@@ -541,233 +541,314 @@ void Station::renderControlsPanel() {
     ImGui::PopStyleColor();
     ImGui::Spacing();
 
-    // Generation params
-    if (ImGui::CollapsingHeader("Generation Parameters", ImGuiTreeNodeFlags_DefaultOpen)) {
-        ImGui::Spacing();
-        ImGui::Text("Complexity");
-        ImGui::PushItemWidth(-1);
-        needsRegeneration |= ImGui::SliderInt("##Iterations", &params.iterations, 1, 6);
-        ImGui::PopItemWidth();
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Number of L-System iterations (higher = more complex station)");
-        ImGui::Spacing();
-        ImGui::Separator();
-        ImGui::Spacing();
-        ImGui::Text("Module Sizing (10, 20, or 30 units)");
-        ImGui::PushItemWidth(-1);
-        needsRegeneration |= ImGui::SliderFloat("##BaseLength", &params.baseLength, 10.0f, 30.0f, "Base: %.0f");
-        ImGui::PopItemWidth();
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Initial module length (10, 20, or 30)");
-        ImGui::PushItemWidth(-1);
-        needsRegeneration |= ImGui::SliderFloat("##LengthDecay", &params.lengthDecay, 0.5f, 1.0f, "Decay: %.2f");
-        ImGui::PopItemWidth();
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("How much modules shrink each generation");
-        ImGui::Spacing();
-        ImGui::TextWrapped("Note: Modules are quantized to 10, 20, or 30 units. Junctions (5.9 units) are placed between modules.");
-        ImGui::Spacing();
-    }
+    // ========== ENABLE 3D SPACE STATION (TOP LEVEL TOGGLE) ==========
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.6f, 0.9f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.7f, 1.0f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.1f, 0.5f, 0.8f, 1.0f));
 
-    // Topology
-    if (ImGui::CollapsingHeader("Topology & Connections", ImGuiTreeNodeFlags_DefaultOpen)) {
-        ImGui::Spacing();
-        needsRegeneration |= ImGui::Checkbox("Allow Vertical Modules", &params.allowVerticalModules);
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Enable modules that extend upward or downward");
-        if (params.allowVerticalModules) {
-            ImGui::Spacing();
-            ImGui::Text("Vertical Probability");
-            ImGui::PushItemWidth(-1);
-            needsRegeneration |= ImGui::SliderFloat("##VertProb", &params.verticalProbability, 0.0f, 1.0f, "%.2f");
-            ImGui::PopItemWidth();
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Chance of creating a vertical module");
+    bool toggleChanged = false;
+    if (m_drawStation) {
+        if (ImGui::Button("Disable 3D Space Station", ImVec2(-1, 40))) {
+            m_drawStation = false;
+            toggleChanged = true;
         }
-        ImGui::Spacing();
+    }
+    else {
+        if (ImGui::Button("Enable 3D Space Station", ImVec2(-1, 40))) {
+            m_drawStation = true;
+            toggleChanged = true;
+        }
     }
 
-    // Solar Panels
-    if (ImGui::CollapsingHeader("Solar Panels", ImGuiTreeNodeFlags_DefaultOpen)) {
-        ImGui::Spacing();
-        needsRegeneration |= ImGui::Checkbox("Enable Solar Panels", &params.enableSolarPanels);
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Add solar panels to modules");
+    ImGui::PopStyleColor(3);
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
 
-        if (params.enableSolarPanels) {
+    // Only show everything else if 3D station is enabled
+    if (m_drawStation) {
+        // ========== GENERATION PARAMETERS ==========
+        if (ImGui::CollapsingHeader("Generation Parameters", ImGuiTreeNodeFlags_DefaultOpen)) {
             ImGui::Spacing();
-            ImGui::Text("Solar Panel Probability");
+
+            // Complexity
+            ImGui::Text("Complexity");
             ImGui::PushItemWidth(-1);
-            needsRegeneration |= ImGui::SliderFloat("##SolarProb", &params.solarPanelProbability, 0.0f, 1.0f, "%.2f");
+            needsRegeneration |= ImGui::SliderInt("##Iterations", &params.iterations, 1, 6);
             ImGui::PopItemWidth();
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Chance of a module having solar panels");
-
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Number of L-System iterations");
             ImGui::Spacing();
-            ImGui::Text("Panel Offset from Center");
+
+            // Max Module Size (changed to 1, 2, 3)
+            ImGui::Text("Max Module Size");
+            int moduleSizeIndex = 0;
+            if (params.baseLength <= 15.0f) moduleSizeIndex = 0;      // 1 = 10 units
+            else if (params.baseLength <= 25.0f) moduleSizeIndex = 1; // 2 = 20 units
+            else moduleSizeIndex = 2;                                  // 3 = 30 units
+
             ImGui::PushItemWidth(-1);
-            if (ImGui::SliderFloat("##PanelOffset", &m_renderParams.solarPanelOffset, 1.0f, 5.0f, "%.1f units")) {
-                // No regeneration needed, just visual update
+            if (ImGui::SliderInt("##ModuleSize", &moduleSizeIndex, 0, 2,
+                moduleSizeIndex == 0 ? "1 (10 units)" :
+                moduleSizeIndex == 1 ? "2 (20 units)" : "3 (30 units)")) {
+                // Convert index to actual length
+                if (moduleSizeIndex == 0) params.baseLength = 10.0f;
+                else if (moduleSizeIndex == 1) params.baseLength = 20.0f;
+                else params.baseLength = 30.0f;
+                needsRegeneration = true;
             }
             ImGui::PopItemWidth();
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Distance from module center to solar panels");
-        }
-        ImGui::Spacing();
-    }
-
-    // 3D rendering
-    if (ImGui::CollapsingHeader("3D Rendering", ImGuiTreeNodeFlags_DefaultOpen)) {
-        ImGui::Spacing();
-        ImGui::Checkbox("Enable 3D View", &m_drawStation);
-        ImGui::Spacing();
-
-        if (m_modelsLoaded) {
-            ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "All models loaded");
-        }
-        else {
-            ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "Models not loaded");
-        }
-
-        ImGui::Spacing();
-    }
-
-    // Material Assignment Controls
-    if (ImGui::CollapsingHeader("Material Assignment", ImGuiTreeNodeFlags_DefaultOpen)) {
-        ImGui::Spacing();
-        ImGui::TextWrapped("Each object has 4 material slots. Assign PBR materials (Gold, Plastic, or Cloth) to each slot.");
-        ImGui::Spacing();
-        ImGui::Separator();
-        ImGui::Spacing();
-
-        // Action buttons
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.7f, 0.3f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.8f, 0.4f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.1f, 0.6f, 0.2f, 1.0f));
-
-        if (ImGui::Button("Randomize All Materials", ImVec2(-1, 30))) {
-            randomizeMaterials();
-        }
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Randomly assign materials to all slots of all objects");
-        }
-
-        ImGui::PopStyleColor(3);
-
-        ImGui::Spacing();
-
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.3f, 0.2f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.8f, 0.4f, 0.3f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.6f, 0.2f, 0.1f, 1.0f));
-
-        if (ImGui::Button("Reset to Default Materials", ImVec2(-1, 30))) {
-            resetMaterials();
-        }
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Reset all materials to default pattern (Gold, Plastic, Cloth, Gold)");
-        }
-
-        ImGui::PopStyleColor(3);
-
-        ImGui::Spacing();
-        ImGui::Separator();
-        ImGui::Spacing();
-
-        // Individual object material controls
-        if (m_modelsLoaded) {
-            ImGui::Text("Individual Object Materials:");
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Maximum module size: 1=10 units, 2=20 units, 3=30 units");
             ImGui::Spacing();
 
-            renderMaterialControls("Module 1 (10 units)", m_module1Materials);
-            renderMaterialControls("Module 2 (20 units)", m_module2Materials);
-            renderMaterialControls("Module 3 (30 units)", m_module3Materials);
-            renderMaterialControls("Junction", m_junctionMaterials);
-            renderMaterialControls("Solar Panel", m_solarPanelMaterials);
-        }
-        else {
-            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "Load models to configure materials");
+            // Decay
+            ImGui::Text("Decay");
+            ImGui::PushItemWidth(-1);
+            needsRegeneration |= ImGui::SliderFloat("##LengthDecay", &params.lengthDecay, 0.5f, 1.0f, "%.2f");
+            ImGui::PopItemWidth();
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("How much modules shrink each generation");
+            ImGui::Spacing();
+
+            // Seed
+            ImGui::Text("Seed");
+            ImGui::PushItemWidth(-1);
+            needsRegeneration |= ImGui::SliderInt("##Seed", &params.seed, 1, 99999);
+            ImGui::PopItemWidth();
+            ImGui::Spacing();
         }
 
+        // ========== INLINE TOGGLE BUTTONS ==========
         ImGui::Spacing();
-    }
 
-    // Random seed
-    if (ImGui::CollapsingHeader("Random Seed", ImGuiTreeNodeFlags_DefaultOpen)) {
-        ImGui::Spacing();
-        ImGui::PushItemWidth(-1);
-        needsRegeneration |= ImGui::SliderInt("##Seed", &params.seed, 1, 99999);
-        ImGui::PopItemWidth();
-        ImGui::Spacing();
-        if (ImGui::Button("New Random Seed", ImVec2(-1, 0))) {
+        // Calculate button width for 3 buttons in a row
+        float buttonWidth = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x * 2) / 3.0f;
+
+        // Vertical Modules Toggle
+        ImGui::PushStyleColor(ImGuiCol_Button, params.allowVerticalModules ?
+            ImVec4(0.2f, 0.7f, 0.3f, 1.0f) : ImVec4(0.6f, 0.6f, 0.6f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, params.allowVerticalModules ?
+            ImVec4(0.3f, 0.8f, 0.4f, 1.0f) : ImVec4(0.7f, 0.7f, 0.7f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, params.allowVerticalModules ?
+            ImVec4(0.1f, 0.6f, 0.2f, 1.0f) : ImVec4(0.5f, 0.5f, 0.5f, 1.0f));
+
+        if (ImGui::Button(params.allowVerticalModules ? "Vertical Modules ON" : "Vertical Modules OFF",
+            ImVec2(buttonWidth, 30))) {
+            params.allowVerticalModules = !params.allowVerticalModules;
+            needsRegeneration = true;
+        }
+        ImGui::PopStyleColor(3);
+
+        ImGui::SameLine();
+
+        // Solar Panels Toggle
+        ImGui::PushStyleColor(ImGuiCol_Button, params.enableSolarPanels ?
+            ImVec4(0.2f, 0.7f, 0.3f, 1.0f) : ImVec4(0.6f, 0.6f, 0.6f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, params.enableSolarPanels ?
+            ImVec4(0.3f, 0.8f, 0.4f, 1.0f) : ImVec4(0.7f, 0.7f, 0.7f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, params.enableSolarPanels ?
+            ImVec4(0.1f, 0.6f, 0.2f, 1.0f) : ImVec4(0.5f, 0.5f, 0.5f, 1.0f));
+
+        if (ImGui::Button(params.enableSolarPanels ? "Solar Panels ON" : "Solar Panels OFF",
+            ImVec2(buttonWidth, 30))) {
+            params.enableSolarPanels = !params.enableSolarPanels;
+            needsRegeneration = true;
+        }
+        ImGui::PopStyleColor(3);
+
+        ImGui::SameLine();
+
+        // Randomise Seed Button
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.9f, 0.6f, 0.2f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1.0f, 0.7f, 0.3f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.8f, 0.5f, 0.1f, 1.0f));
+
+        if (ImGui::Button("Randomise Seed", ImVec2(buttonWidth, 30))) {
             std::random_device rd;
             std::mt19937 gen(rd());
             std::uniform_int_distribution<> dis(1, 99999);
             params.seed = dis(gen);
             needsRegeneration = true;
         }
-        ImGui::Spacing();
-    }
-
-    ImGui::Spacing();
-    ImGui::Separator();
-    ImGui::Spacing();
-
-    // Statistics
-    if (ImGui::CollapsingHeader("Statistics", ImGuiTreeNodeFlags_DefaultOpen)) {
-        const auto& modules = m_lsystem.getModules();
-        const auto& junctions = m_lsystem.getJunctions();
-        const auto& sequence = m_lsystem.getCurrentSequence();
+        ImGui::PopStyleColor(3);
 
         ImGui::Spacing();
-        ImGui::Columns(2, "stats", false);
-        ImGui::Text("Total Modules:");
-        ImGui::NextColumn();
-        ImGui::Text("%zu", modules.size());
-        ImGui::NextColumn();
+        ImGui::Separator();
+        ImGui::Spacing();
 
-        int verticalCount = 0;
-        int solarPanelCount = 0;
-        int length10Count = 0;
-        int length20Count = 0;
-        int length30Count = 0;
+        // ========== MODEL PARAMETERS ==========
+        if (ImGui::CollapsingHeader("Model Parameters", ImGuiTreeNodeFlags_DefaultOpen)) {
+            ImGui::Spacing();
 
-        for (const auto& module : modules) {
-            if (module.isVertical) verticalCount++;
-            if (module.hasSolarPanels) solarPanelCount++;
-            if (module.length <= 15.0f) length10Count++;
-            else if (module.length <= 25.0f) length20Count++;
-            else length30Count++;
+            // Vertical Probability (only if vertical modules enabled)
+            if (params.allowVerticalModules) {
+                ImGui::Text("Vertical Probability");
+                ImGui::PushItemWidth(-1);
+                needsRegeneration |= ImGui::SliderFloat("##VertProb", &params.verticalProbability, 0.0f, 1.0f, "%.2f");
+                ImGui::PopItemWidth();
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Chance of creating a vertical module");
+                ImGui::Spacing();
+            }
+
+            // Solar Panel Parameters (only if solar panels enabled)
+            if (params.enableSolarPanels) {
+                ImGui::Text("Panel Probability");
+                ImGui::PushItemWidth(-1);
+                needsRegeneration |= ImGui::SliderFloat("##SolarProb", &params.solarPanelProbability, 0.0f, 1.0f, "%.2f");
+                ImGui::PopItemWidth();
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Chance of a module having solar panels");
+                ImGui::Spacing();
+
+                ImGui::Text("Offset from Centre");
+                ImGui::PushItemWidth(-1);
+                ImGui::SliderFloat("##PanelOffset", &m_renderParams.solarPanelOffset, 1.0f, 5.0f, "%.1f units");
+                ImGui::PopItemWidth();
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Distance from module center to solar panels");
+                ImGui::Spacing();
+            }
         }
 
-        ImGui::Text("Vertical Modules:");
-        ImGui::NextColumn();
-        ImGui::Text("%d", verticalCount);
-        ImGui::NextColumn();
+        // ========== MATERIAL PARAMETERS ==========
+        if (ImGui::CollapsingHeader("Material Parameters", ImGuiTreeNodeFlags_DefaultOpen)) {
+            ImGui::Spacing();
 
-        ImGui::Text("With Solar Panels:");
-        ImGui::NextColumn();
-        ImGui::Text("%d", solarPanelCount);
-        ImGui::NextColumn();
+            // Two buttons side by side
+            float halfWidth = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) / 2.0f;
 
-        ImGui::Text("10-unit Modules:");
-        ImGui::NextColumn();
-        ImGui::Text("%d", length10Count);
-        ImGui::NextColumn();
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.7f, 0.3f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.8f, 0.4f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.1f, 0.6f, 0.2f, 1.0f));
 
-        ImGui::Text("20-unit Modules:");
-        ImGui::NextColumn();
-        ImGui::Text("%d", length20Count);
-        ImGui::NextColumn();
+            if (ImGui::Button("Randomise", ImVec2(halfWidth, 30))) {
+                randomizeMaterials();
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Randomly assign materials to all slots");
+            }
 
-        ImGui::Text("30-unit Modules:");
-        ImGui::NextColumn();
-        ImGui::Text("%d", length30Count);
-        ImGui::NextColumn();
+            ImGui::PopStyleColor(3);
+            ImGui::SameLine();
 
-        ImGui::Text("Junctions:");
-        ImGui::NextColumn();
-        ImGui::Text("%zu", junctions.size());
-        ImGui::NextColumn();
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.3f, 0.2f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.8f, 0.4f, 0.3f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.6f, 0.2f, 0.1f, 1.0f));
 
-        ImGui::Text("Sequence Length:");
-        ImGui::NextColumn();
-        ImGui::Text("%zu", sequence.length());
-        ImGui::NextColumn();
+            if (ImGui::Button("Reset", ImVec2(halfWidth, 30))) {
+                resetMaterials();
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Reset materials to default");
+            }
 
-        ImGui::Columns(1);
-        ImGui::Spacing();
+            ImGui::PopStyleColor(3);
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Spacing();
+
+            // Individual Object Materials
+            if (m_modelsLoaded) {
+                ImGui::Text("Individual Object Materials:");
+                ImGui::Spacing();
+
+                renderMaterialControls("Module 1 (10 units)", m_module1Materials);
+                renderMaterialControls("Module 2 (20 units)", m_module2Materials);
+                renderMaterialControls("Module 3 (30 units)", m_module3Materials);
+                renderMaterialControls("Junction", m_junctionMaterials);
+                renderMaterialControls("Solar Panel", m_solarPanelMaterials);
+            }
+            else {
+                ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "Load models to configure materials");
+            }
+
+            ImGui::Spacing();
+        }
+
+        // ========== STATISTICS ==========
+        if (ImGui::CollapsingHeader("Statistics", ImGuiTreeNodeFlags_DefaultOpen)) {
+            const auto& modules = m_lsystem.getModules();
+            const auto& junctions = m_lsystem.getJunctions();
+            const auto& sequence = m_lsystem.getCurrentSequence();
+
+            ImGui::Spacing();
+            ImGui::Columns(2, "stats", false);
+
+            ImGui::Text("Total Modules:");
+            ImGui::NextColumn();
+            ImGui::Text("%zu", modules.size());
+            ImGui::NextColumn();
+
+            int verticalCount = 0;
+            int solarPanelCount = 0;
+
+            for (const auto& module : modules) {
+                if (module.isVertical) verticalCount++;
+                if (module.hasSolarPanels) solarPanelCount++;
+            }
+
+            ImGui::Text("Vertical Modules:");
+            ImGui::NextColumn();
+            ImGui::Text("%d", verticalCount);
+            ImGui::NextColumn();
+
+            ImGui::Text("With Solar Panels:");
+            ImGui::NextColumn();
+            ImGui::Text("%d", solarPanelCount);
+            ImGui::NextColumn();
+
+            ImGui::Text("Junctions:");
+            ImGui::NextColumn();
+            ImGui::Text("%zu", junctions.size());
+            ImGui::NextColumn();
+
+            ImGui::Text("Sequence Length:");
+            ImGui::NextColumn();
+            ImGui::Text("%zu", sequence.length());
+            ImGui::NextColumn();
+
+            ImGui::Columns(1);
+            ImGui::Spacing();
+        }
+
+        // ========== OBJ STATISTICS ==========
+        if (ImGui::CollapsingHeader("OBJ Statistics", ImGuiTreeNodeFlags_DefaultOpen)) {
+            const auto& modules = m_lsystem.getModules();
+
+            ImGui::Spacing();
+            ImGui::Columns(2, "obj_stats", false);
+
+            int length10Count = 0;
+            int length20Count = 0;
+            int length30Count = 0;
+
+            for (const auto& module : modules) {
+                if (module.length <= 15.0f) length10Count++;
+                else if (module.length <= 25.0f) length20Count++;
+                else length30Count++;
+            }
+
+            ImGui::Text("10-unit Modules:");
+            ImGui::NextColumn();
+            ImGui::Text("%d", length10Count);
+            ImGui::NextColumn();
+
+            ImGui::Text("20-unit Modules:");
+            ImGui::NextColumn();
+            ImGui::Text("%d", length20Count);
+            ImGui::NextColumn();
+
+            ImGui::Text("30-unit Modules:");
+            ImGui::NextColumn();
+            ImGui::Text("%d", length30Count);
+            ImGui::NextColumn();
+
+            if (m_modelsLoaded) {
+                ImGui::Text("Models Status:");
+                ImGui::NextColumn();
+                ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Loaded");
+                ImGui::NextColumn();
+            }
+
+            ImGui::Columns(1);
+            ImGui::Spacing();
+        }
     }
 
     if (needsRegeneration) regenerate();
@@ -779,7 +860,6 @@ void Station::renderGUI() {
     ImGui::SetNextWindowSize(ImVec2(520, 720), ImGuiSetCond_FirstUseEver);
     ImGui::Begin("Space Station Generator", nullptr);
 
-    // Single-pane GUI: controls only (no 2D visualization)
     renderControlsPanel();
 
     ImGui::End();

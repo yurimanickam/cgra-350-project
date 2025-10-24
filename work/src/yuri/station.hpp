@@ -17,7 +17,7 @@ namespace cgra {
 struct Rendering3DParams {
     float junctionRadius = 1.0f;
     float gapMultiplier = 0.0f;
-    float solarPanelOffset = 2.5f; // How far from center the solar panels are positioned
+    float solarPanelOffset = 4.5f; // How far from center the solar panels are positioned
 };
 
 class Station {

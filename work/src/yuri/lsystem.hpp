@@ -55,7 +55,7 @@ struct LSystemParams {
     int iterations = 3;
     float baseLength = 10.0f;      // Base module length (10, 20, or 30)
     float baseAngle = 90.0f;
-    float lengthDecay = 0.8f;
+    float lengthDecay = 0.9f;
     float minLength = 10.0f;       // Minimum module length
     bool allowVerticalModules = true;
     float verticalProbability = 0.35f; // Probability for each junction to spawn a vertical module
