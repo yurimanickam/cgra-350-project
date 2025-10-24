@@ -51,7 +51,6 @@ Application::Application(GLFWwindow* window) : m_window(window) {
 		CGRA_SRCDIR + std::string("//res//shaders//lava_fragment.glsl")
 	);
 
-	m_station.initializeLSystem();
 }
 
 void Application::render() {
@@ -160,8 +159,10 @@ void Application::render() {
 	if (m_show_axis) drawAxis(view, proj);
 	glPolygonMode(GL_FRONT_AND_BACK, (m_showWireframe) ? GL_LINE : GL_FILL);
 
-	// Draw the L-System space station in 3D (junctions only, modules are rendered via renderMultiMaterialModel)
-	m_station.render3DStation(view, proj, m_default_shader);
+	// Render station with multi-material models
+	if (m_station.shouldDrawStation()) {
+		m_station.renderMultiMaterialModel(view, proj, m_pbr_shader, m_cameraPos);
+	}
 
 	// Render lava lamp
 	m_lavaLamp.renderLavaLamp(
@@ -174,7 +175,7 @@ void Application::render() {
 void Application::renderGUI() {
 	// setup window
 	ImGui::SetNextWindowPos(ImVec2(5, 5), ImGuiSetCond_Once);
-	ImGui::SetNextWindowSize(ImVec2(400, 350), ImGuiSetCond_Once);
+	ImGui::SetNextWindowSize(ImVec2(400, 340), ImGuiSetCond_Once);
 	ImGui::Begin("Lava Lamp Controls", 0);
 
 	// display current camera parameters
@@ -208,8 +209,8 @@ void Application::renderGUI() {
 
 	ImGui::End();
 
-	ImGui::SetNextWindowPos(ImVec2(5, 360), ImGuiSetCond_Once);
-	ImGui::SetNextWindowSize(ImVec2(400, 200), ImGuiSetCond_Once);
+	ImGui::SetNextWindowPos(ImVec2(5, 350), ImGuiSetCond_Once);
+	ImGui::SetNextWindowSize(ImVec2(400, 180), ImGuiSetCond_Once);
 	ImGui::Begin("PBR Controls", 0);
 
 	ImGui::Text("Physically Based Rendering (PBR) Settings");
@@ -223,6 +224,10 @@ void Application::renderGUI() {
 
 	if (ImGui::Button("Space Environment")) {
 		loadPBRShaders(CGRA_SRCDIR + std::string("//res//textures//space.hdr"));
+	}
+
+	if (ImGui::Button("Nebula Environment")) {
+		loadPBRShaders(CGRA_SRCDIR + std::string("//res//textures//nebula.hdr"));
 	}
 
 	if (ImGui::Button("Studio Environment")) {

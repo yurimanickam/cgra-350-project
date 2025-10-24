@@ -14,6 +14,13 @@ extern textureData gold;
 extern textureData plastic;
 extern textureData cloth;
 
+//station textures
+extern textureData panel;
+extern textureData solar;
+extern textureData metal;
+
+
+
 // shaders
 extern GLuint m_shader;
 extern GLuint m_default_shader;

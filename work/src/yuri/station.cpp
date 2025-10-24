@@ -1,13 +1,15 @@
 #include "station.hpp"
 #include <algorithm>
 #include <cmath>
+#include <random>
+#include <iostream>
+
 #include <cgra/cgra_mesh.hpp>
 #include <cgra/cgra_geometry.hpp>
 #include <glm/gtc/constants.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <imgui.h>
-#include <iostream>
 
 #include "yuri/objloader.hpp"
 #include "matt/pbr.hpp"
@@ -16,136 +18,164 @@ using namespace glm;
 
 namespace {
     constexpr float HALF_PI = glm::half_pi<float>();
-    constexpr float TWO_PI = glm::two_pi<float>();
     constexpr float PI = glm::pi<float>();
-    constexpr float MODEL_LENGTH = 10.0f;
-    constexpr float JUNCTION_SIZE = 5.9f;
-    constexpr float JUNCTION_RADIUS = 2.95f; // Half of JUNCTION_SIZE
+    constexpr float JUNCTION_RADIUS = 2.95f;
+    const char* MATERIAL_NAMES[] = { "Gold", "Plastic", "Cloth", "Panel", "Solar", "Metal" };
 
-    // module colors for preview
-    const ImU32 MODULE_COLORS[] = {
-        IM_COL32(200, 200, 200, 255),
-        IM_COL32(100, 255, 100, 255),
-        IM_COL32(100, 150, 255, 255),
-        IM_COL32(255, 220, 100, 255)
-    };
-
-    constexpr int NUM_MODULE_TYPES = 4;
-
-    // junction colors
-    const ImU32 JUNCTION_COLOR = IM_COL32(150, 150, 160, 255);
-    const ImU32 VERTICAL_JUNCTION_COLOR = IM_COL32(255, 150, 100, 255);
-
-    // some ui colors
+    // color stuff for ui
     const ImVec4 COLOR_HEADER = ImVec4(0.26f, 0.59f, 0.98f, 0.80f);
-    const ImVec4 COLOR_ACTIVE = ImVec4(0.26f, 0.59f, 0.98f, 1.00f);
-    const ImVec4 COLOR_HOVER = ImVec4(0.26f, 0.59f, 0.98f, 0.67f);
+    const ImVec4 COLOR_BUTTON_PRIMARY = ImVec4(0.2f, 0.6f, 0.9f, 1.0f);
+    const ImVec4 COLOR_BUTTON_PRIMARY_HOVER = ImVec4(0.3f, 0.7f, 1.0f, 1.0f);
+    const ImVec4 COLOR_BUTTON_PRIMARY_ACTIVE = ImVec4(0.1f, 0.5f, 0.8f, 1.0f);
+    const ImVec4 COLOR_BUTTON_SUCCESS = ImVec4(0.2f, 0.7f, 0.3f, 1.0f);
+    const ImVec4 COLOR_BUTTON_SUCCESS_HOVER = ImVec4(0.3f, 0.8f, 0.4f, 1.0f);
+    const ImVec4 COLOR_BUTTON_SUCCESS_ACTIVE = ImVec4(0.1f, 0.6f, 0.2f, 1.0f);
+    const ImVec4 COLOR_BUTTON_DANGER = ImVec4(0.7f, 0.3f, 0.2f, 1.0f);
+    const ImVec4 COLOR_BUTTON_DANGER_HOVER = ImVec4(0.8f, 0.4f, 0.3f, 1.0f);
+    const ImVec4 COLOR_BUTTON_DANGER_ACTIVE = ImVec4(0.6f, 0.2f, 0.1f, 1.0f);
+    const ImVec4 COLOR_BUTTON_WARNING = ImVec4(0.9f, 0.6f, 0.2f, 1.0f);
+    const ImVec4 COLOR_BUTTON_WARNING_HOVER = ImVec4(1.0f, 0.7f, 0.3f, 1.0f);
+    const ImVec4 COLOR_BUTTON_WARNING_ACTIVE = ImVec4(0.8f, 0.5f, 0.1f, 1.0f);
+    const ImVec4 COLOR_BUTTON_INACTIVE = ImVec4(0.6f, 0.6f, 0.6f, 1.0f);
+    const ImVec4 COLOR_BUTTON_INACTIVE_HOVER = ImVec4(0.7f, 0.7f, 0.7f, 1.0f);
+    const ImVec4 COLOR_BUTTON_INACTIVE_ACTIVE = ImVec4(0.5f, 0.5f, 0.5f, 1.0f);
+
+    // set button colors
+    void PushButtonColors(const ImVec4& base, const ImVec4& hover, const ImVec4& active) {
+        ImGui::PushStyleColor(ImGuiCol_Button, base);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, hover);
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, active);
+    }
+
+    // load a 3d model
+    cgra::multi_mesh_model* LoadModel(const std::string& filename) {
+        const std::string basePath = CGRA_SRCDIR + std::string("/res/assets/");
+        auto* model = new cgra::multi_mesh_model();
+        *model = cgra::loadMultiModel(basePath + filename);
+        return model;
+    }
+
+    // kill a model
+    void DestroyModel(cgra::multi_mesh_model*& model) {
+        if (model) {
+            model->destroy();
+            delete model;
+            model = nullptr;
+        }
+    }
 }
 
-Station::Station()
-    : m_module1(nullptr)
-    , m_module2(nullptr)
-    , m_module3(nullptr)
-    , m_junctionModel(nullptr)
-    , m_modelsLoaded(false)
-{
+// constructor
+Station::Station() {
     initializeLSystem();
-    rebuildMeshes();
-
-    // Load all module models and junction
+    initializeDefaultMaterials();
     loadModuleModels();
 }
 
+// destructor
 Station::~Station() {
     destroyModels();
 }
 
+// kill all models
 void Station::destroyModels() {
-    if (m_module1) {
-        m_module1->destroy();
-        delete m_module1;
-        m_module1 = nullptr;
-    }
-    if (m_module2) {
-        m_module2->destroy();
-        delete m_module2;
-        m_module2 = nullptr;
-    }
-    if (m_module3) {
-        m_module3->destroy();
-        delete m_module3;
-        m_module3 = nullptr;
-    }
-    if (m_junctionModel) {
-        m_junctionModel->destroy();
-        delete m_junctionModel;
-        m_junctionModel = nullptr;
-    }
+    DestroyModel(m_module1);
+    DestroyModel(m_module2);
+    DestroyModel(m_module3);
+    DestroyModel(m_junctionModel);
+    DestroyModel(m_solarPanelModel);
 }
 
+// set default materials for stuff
+void Station::initializeDefaultMaterials() {
+    m_module1Materials = { 5, 1, 2, 3 };
+    m_module2Materials = { 5, 1, 2, 3 };
+    m_module3Materials = { 5, 1, 2, 3 };
+    m_junctionMaterials = { 1, 0, 2, 4 };
+    m_solarPanelMaterials = { 4, 0, 0, 0 };
+}
+
+// random materials for everything
+void Station::randomizeMaterials() {
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<> dis(0, NUM_PBR_MATERIALS - 1);
+
+    auto randomizeArray = [&](std::array<int, NUM_MATERIALS_PER_OBJECT>& materials) {
+        for (int& material : materials) {
+            material = dis(gen);
+        }
+        };
+
+    randomizeArray(m_module1Materials);
+    randomizeArray(m_module2Materials);
+    randomizeArray(m_module3Materials);
+    randomizeArray(m_junctionMaterials);
+    randomizeArray(m_solarPanelMaterials);
+
+    std::cout << "Station: Randomized all material assignments\n";
+}
+
+// put materials back to default
+void Station::resetMaterials() {
+    initializeDefaultMaterials();
+    std::cout << "Station: Reset all material assignments to default\n";
+}
+
+// load models for modules
 void Station::loadModuleModels() {
     destroyModels();
 
-    // Load the three module sizes
-    m_module1 = new cgra::multi_mesh_model();
-    *m_module1 = cgra::load_multi_mesh_model(CGRA_SRCDIR + std::string("/res/assets/module1.obj"));
+    m_module1 = LoadModel("module1.obj");
+    m_module2 = LoadModel("module2.obj");
+    m_module3 = LoadModel("module3.obj");
+    m_junctionModel = LoadModel("junction.obj");
+    m_solarPanelModel = LoadModel("solarPanel2.obj");
 
-    m_module2 = new cgra::multi_mesh_model();
-    *m_module2 = cgra::load_multi_mesh_model(CGRA_SRCDIR + std::string("/res/assets/module2.obj"));
-
-    m_module3 = new cgra::multi_mesh_model();
-    *m_module3 = cgra::load_multi_mesh_model(CGRA_SRCDIR + std::string("/res/assets/module3.obj"));
-
-    // Load junction model
-    m_junctionModel = new cgra::multi_mesh_model();
-    *m_junctionModel = cgra::load_multi_mesh_model(CGRA_SRCDIR + std::string("/res/assets/junction.obj"));
-
-    if (!m_module1->mesh_groups.empty() &&
+    m_modelsLoaded = !m_module1->mesh_groups.empty() &&
         !m_module2->mesh_groups.empty() &&
         !m_module3->mesh_groups.empty() &&
-        !m_junctionModel->mesh_groups.empty()) {
-        m_modelsLoaded = true;
-        assignCyclicalMaterials();
-        std::cout << "Station: All module models and junction loaded successfully" << std::endl;
+        !m_junctionModel->mesh_groups.empty() &&
+        !m_solarPanelModel->mesh_groups.empty();
+
+    std::cout << "Station: " << (m_modelsLoaded ? "All models loaded successfully" : "Failed to load one or more models") << "\n";
+}
+
+// get material index for the object type
+int Station::getMaterialIndexForObject(ObjectType objType, size_t materialSlot) const {
+    if (materialSlot >= NUM_MATERIALS_PER_OBJECT) {
+        return 1;
     }
-    else {
-        m_modelsLoaded = false;
-        std::cout << "Station: Failed to load one or more module models" << std::endl;
+
+    switch (objType) {
+    case ObjectType::MODULE1:     return m_module1Materials[materialSlot];
+    case ObjectType::MODULE2:     return m_module2Materials[materialSlot];
+    case ObjectType::MODULE3:     return m_module3Materials[materialSlot];
+    case ObjectType::JUNCTION:    return m_junctionMaterials[materialSlot];
+    case ObjectType::SOLAR_PANEL: return m_solarPanelMaterials[materialSlot];
+    default:                      return 1;
     }
 }
 
-void Station::assignCyclicalMaterials() {
-    m_materialAssignments.clear();
-
-    // Assign materials for module1
-    if (m_module1 && !m_module1->mesh_groups.empty()) {
-        for (size_t i = 0; i < m_module1->mesh_groups.size(); ++i) {
-            m_materialAssignments.push_back(i % 3);
-        }
-    }
-
-    // Same pattern for all modules and junction
-    std::cout << "Station: Assigned cyclical PBR materials (0=gold, 1=plastic, 2=cloth)" << std::endl;
-}
-
-int Station::getMaterialIndexForGroup(size_t groupIndex) const {
-    if (groupIndex < m_materialAssignments.size()) {
-        return m_materialAssignments[groupIndex];
-    }
-    return 1; // Default to plastic
-}
-
+// pick model for a given length
 cgra::multi_mesh_model* Station::getModelForLength(float length) const {
-    if (length <= 15.0f) return m_module1;      // 10 units
-    else if (length <= 25.0f) return m_module2; // 20 units
-    else return m_module3;                       // 30 units
+    if (length <= 15.0f) return m_module1;
+    if (length <= 25.0f) return m_module2;
+    return m_module3;
 }
 
+// pick object type for a given length
+Station::ObjectType Station::getObjectTypeForLength(float length) const {
+    if (length <= 15.0f) return ObjectType::MODULE1;
+    if (length <= 25.0f) return ObjectType::MODULE2;
+    return ObjectType::MODULE3;
+}
+
+// calc transform for module
 glm::mat4 Station::calculateModuleTransform(const StationModule& module) const {
     const auto& junctions = m_lsystem.getJunctions();
 
     if (module.isVertical) {
-        // Find the target vertical junction
         float endY = module.verticalOffset;
         for (const auto& junction : junctions) {
             if (length(junction.position - module.startPos) < 0.1f &&
@@ -158,60 +188,95 @@ glm::mat4 Station::calculateModuleTransform(const StationModule& module) const {
         bool pointingUp = endY > module.verticalOffset;
         vec3 position(module.startPos.x, module.verticalOffset, module.startPos.y);
 
-        // Calculate center position accounting for junction radius
-        float moduleLength = module.length;
-        float centerOffset = (moduleLength / 2.0f) + JUNCTION_RADIUS;
+        float centerOffset = (module.length / 2.0f) + JUNCTION_RADIUS;
         position.y += pointingUp ? centerOffset : -centerOffset;
 
-        // Start with translation
         mat4 transform = translate(mat4(1.0f), position);
-
-        // Rotate to point vertically
-        if (pointingUp) {
-            // Point up: rotate -90 around Z axis
-            transform = rotate(transform, -HALF_PI, vec3(0.0f, 0.0f, 1.0f));
-        }
-        else {
-            // Point down: rotate 90 around Z axis
-            transform = rotate(transform, HALF_PI, vec3(0.0f, 0.0f, 1.0f));
-        }
+        transform = rotate(transform, pointingUp ? -HALF_PI : HALF_PI, vec3(0.0f, 0.0f, 1.0f));
 
         return transform;
     }
     else {
-        // Horizontal module
         vec3 fromPos3D(module.startPos.x, 0.0f, module.startPos.y);
         vec3 toPos3D(module.endPos.x, 0.0f, module.endPos.y);
-
-        // Calculate direction and center position
         vec3 direction = normalize(toPos3D - fromPos3D);
-        float moduleLength = module.length;
 
-        // The module center is offset by: (module_length / 2) + junction_radius
-        float centerOffset = (moduleLength / 2.0f) + JUNCTION_RADIUS;
+        float centerOffset = (module.length / 2.0f) + JUNCTION_RADIUS;
         vec3 position = fromPos3D + direction * centerOffset;
 
-        // Start with translation
         mat4 transform = translate(mat4(1.0f), position);
-
-        // Calculate rotation angle from direction
-        // The modules point along +X axis by default
         float angle = atan2(direction.z, direction.x);
-
-        // Rotate around Y axis to align with direction
         transform = rotate(transform, angle, vec3(0.0f, 1.0f, 0.0f));
 
         return transform;
     }
 }
 
+// calc junction transform
 glm::mat4 Station::calculateJunctionTransform(const ModuleJunction& junction) const {
     vec3 position(junction.position.x, junction.verticalOffset, junction.position.y);
     return translate(mat4(1.0f), position);
 }
 
-void Station::renderModelWithMaterials(cgra::multi_mesh_model* model, const glm::mat4& modelTransform,
-    GLuint pbrShader, const glm::mat4& view, const glm::mat4& proj,
+// calc solar panel transform
+glm::mat4 Station::calculateSolarPanelTransform(const StationModule& module, bool isLeftPanel) const {
+    const auto& junctions = m_lsystem.getJunctions();
+
+    if (module.isVertical) {
+        float endY = module.verticalOffset;
+        for (const auto& junction : junctions) {
+            if (length(junction.position - module.startPos) < 0.1f &&
+                std::abs(junction.verticalOffset - module.verticalOffset) > 0.1f) {
+                endY = junction.verticalOffset;
+                break;
+            }
+        }
+
+        bool pointingUp = endY > module.verticalOffset;
+        vec3 centerPos(module.startPos.x, module.verticalOffset, module.startPos.y);
+
+        float centerOffset = (module.length / 2.0f) + JUNCTION_RADIUS;
+        centerPos.y += pointingUp ? centerOffset : -centerOffset;
+
+        mat4 transform = translate(mat4(1.0f), centerPos);
+        transform = rotate(transform, pointingUp ? -HALF_PI : HALF_PI, vec3(0.0f, 0.0f, 1.0f));
+
+        float sideOffset = isLeftPanel ? -m_renderParams.solarPanelOffset : m_renderParams.solarPanelOffset;
+        transform = translate(transform, vec3(0.0f, 0.0f, sideOffset));
+
+        if (isLeftPanel) {
+            transform = rotate(transform, PI, vec3(0.0f, 1.0f, 0.0f));
+        }
+
+        return transform;
+    }
+    else {
+        vec3 fromPos3D(module.startPos.x, 0.0f, module.startPos.y);
+        vec3 toPos3D(module.endPos.x, 0.0f, module.endPos.y);
+        vec3 direction = normalize(toPos3D - fromPos3D);
+
+        float centerOffset = (module.length / 2.0f) + JUNCTION_RADIUS;
+        vec3 centerPos = fromPos3D + direction * centerOffset;
+
+        mat4 transform = translate(mat4(1.0f), centerPos);
+        float angle = atan2(direction.z, direction.x);
+        transform = rotate(transform, angle, vec3(0.0f, 1.0f, 0.0f));
+
+        float sideOffset = isLeftPanel ? -m_renderParams.solarPanelOffset : m_renderParams.solarPanelOffset;
+        transform = translate(transform, vec3(0.0f, 0.0f, sideOffset));
+
+        if (isLeftPanel) {
+            transform = rotate(transform, PI, vec3(0.0f, 1.0f, 0.0f));
+        }
+
+        return transform;
+    }
+}
+
+// draw a model with materials
+void Station::renderModelWithMaterials(cgra::multi_mesh_model* model, ObjectType objType,
+    const glm::mat4& modelTransform, GLuint pbrShader,
+    const glm::mat4& view, const glm::mat4& proj,
     const glm::vec3& camPos) {
     if (!model || model->mesh_groups.empty()) return;
 
@@ -223,29 +288,25 @@ void Station::renderModelWithMaterials(cgra::multi_mesh_model* model, const glm:
     glUniformMatrix3fv(glGetUniformLocation(pbrShader, "normalMatrix"), 1, GL_FALSE,
         value_ptr(transpose(inverse(mat3(modelTransform)))));
 
-    // Render each material group with its assigned PBR material
-    for (size_t i = 0; i < model->mesh_groups.size(); ++i) {
-        int materialIndex = getMaterialIndexForGroup(i);
+    // draw each mesh group
+    for (size_t i = 0; i < model->mesh_groups.size() && i < NUM_MATERIALS_PER_OBJECT; ++i) {
+        int materialIndex = getMaterialIndexForObject(objType, i);
 
         switch (materialIndex) {
-        case 0:
-            bindPBRTextures(gold);
-            break;
-        case 1:
-            bindPBRTextures(plastic);
-            break;
-        case 2:
-            bindPBRTextures(cloth);
-            break;
-        default:
-            bindPBRTextures(plastic);
-            break;
+        case 0: bindPBRTextures(gold); break;
+        case 1: bindPBRTextures(plastic); break;
+        case 2: bindPBRTextures(cloth); break;
+        case 3: bindPBRTextures(panel); break;
+        case 4: bindPBRTextures(solar); break;
+        case 5: bindPBRTextures(metal); break;
+        default: bindPBRTextures(plastic); break;
         }
 
         model->mesh_groups[i].mesh.draw();
     }
 }
 
+// draw the full station
 void Station::renderMultiMaterialModel(const glm::mat4& view, const glm::mat4& proj,
     GLuint pbrShader, const glm::vec3& camPos) {
     if (!m_drawStation || !m_modelsLoaded) {
@@ -255,100 +316,69 @@ void Station::renderMultiMaterialModel(const glm::mat4& view, const glm::mat4& p
     const auto& modules = m_lsystem.getModules();
     const auto& junctions = m_lsystem.getJunctions();
 
-    // Render all modules
+    // draw modules + solar panels
     for (const auto& module : modules) {
         cgra::multi_mesh_model* model = getModelForLength(module.length);
+        ObjectType objType = getObjectTypeForLength(module.length);
         mat4 transform = calculateModuleTransform(module);
-        renderModelWithMaterials(model, transform, pbrShader, view, proj, camPos);
+        renderModelWithMaterials(model, objType, transform, pbrShader, view, proj, camPos);
+
+        if (module.hasSolarPanels && m_solarPanelModel) {
+            mat4 leftPanelTransform = calculateSolarPanelTransform(module, true);
+            renderModelWithMaterials(m_solarPanelModel, ObjectType::SOLAR_PANEL,
+                leftPanelTransform, pbrShader, view, proj, camPos);
+
+            mat4 rightPanelTransform = calculateSolarPanelTransform(module, false);
+            renderModelWithMaterials(m_solarPanelModel, ObjectType::SOLAR_PANEL,
+                rightPanelTransform, pbrShader, view, proj, camPos);
+        }
     }
 
-    // Render all junctions
+    // draw junctions
     for (const auto& junction : junctions) {
         mat4 transform = calculateJunctionTransform(junction);
-        renderModelWithMaterials(m_junctionModel, transform, pbrShader, view, proj, camPos);
+        renderModelWithMaterials(m_junctionModel, ObjectType::JUNCTION,
+            transform, pbrShader, view, proj, camPos);
     }
 }
 
-cgra::gl_mesh Station::createSphereMesh(float radius, int stacks, int slices) {
-    using namespace cgra;
-    mesh_builder builder(GL_TRIANGLES);
-
-    for (int i = 0; i <= stacks; ++i) {
-        float phi = PI * float(i) / float(stacks);
-        float y = radius * std::cos(phi);
-        float radiusAtY = radius * std::sin(phi);
-
-        for (int j = 0; j <= slices; ++j) {
-            float theta = TWO_PI * float(j) / float(slices);
-            float x = radiusAtY * std::cos(theta);
-            float z = radiusAtY * std::sin(theta);
-
-            vec3 pos(x, y, z);
-            vec3 normal = normalize(pos);
-            vec2 uv(float(j) / slices, float(i) / stacks);
-
-            builder.vertices.push_back({ pos, normal, uv });
-        }
-    }
-
-    for (int i = 0; i < stacks; ++i) {
-        for (int j = 0; j < slices; ++j) {
-            int curr = i * (slices + 1) + j;
-            int next = curr + slices + 1;
-
-            builder.indices.push_back(curr);
-            builder.indices.push_back(next);
-            builder.indices.push_back(curr + 1);
-
-            builder.indices.push_back(curr + 1);
-            builder.indices.push_back(next);
-            builder.indices.push_back(next + 1);
-        }
-    }
-
-    return builder.build();
-}
-
-void Station::rebuildMeshes() {
-    m_junctionMesh = createSphereMesh(m_renderParams.junctionRadius, 16, 16);
-    m_meshNeedsRebuild = false;
-}
-
+// init the lsystem
 void Station::initializeLSystem() {
     m_lsystem.initialize();
 }
 
+// regen lsystem
 void Station::regenerate() {
     m_lsystem.regenerate();
 }
 
-glm::vec3 Station::getModuleColor(int moduleType) const {
-    switch (moduleType) {
-    case 0: return glm::vec3(0.8f, 0.8f, 0.8f);
-    case 1: return glm::vec3(0.4f, 0.9f, 0.4f);
-    case 2: return glm::vec3(0.4f, 0.6f, 0.9f);
-    case 3: return glm::vec3(0.9f, 0.86f, 0.4f);
-    default: return glm::vec3(0.7f, 0.7f, 0.7f);
+// show material controls for an object
+void Station::renderMaterialControls(const char* objectName,
+    std::array<int, NUM_MATERIALS_PER_OBJECT>& materials) {
+    ImGui::PushID(objectName);
+
+    if (ImGui::TreeNode(objectName)) {
+        ImGui::Spacing();
+
+        for (int i = 0; i < NUM_MATERIALS_PER_OBJECT; ++i) {
+            ImGui::PushID(i);
+            ImGui::Text("Material Slot %d", i);
+            ImGui::SameLine(150);
+            ImGui::PushItemWidth(120);
+            ImGui::Combo(("##mat" + std::to_string(i)).c_str(), &materials[i],
+                MATERIAL_NAMES, NUM_PBR_MATERIALS);
+            ImGui::PopItemWidth();
+            ImGui::PopID();
+        }
+
+        ImGui::Spacing();
+        ImGui::TreePop();
     }
+
+    ImGui::PopID();
 }
 
-void Station::render3DStation(const glm::mat4& view, const glm::mat4& proj, GLuint shader) {
-    // 3D rendering is now handled entirely by renderMultiMaterialModel
-    // This function is kept for compatibility but does nothing
-}
-
-void Station::applyUIStyle() {
-    ImGuiStyle& style = ImGui::GetStyle();
-    style.WindowRounding = 5.0f;
-    style.FrameRounding = 3.0f;
-    style.GrabRounding = 3.0f;
-    style.ScrollbarRounding = 3.0f;
-    style.FramePadding = ImVec2(5, 3);
-    style.ItemSpacing = ImVec2(8, 4);
-    style.ItemInnerSpacing = ImVec2(6, 4);
-    style.IndentSpacing = 20.0f;
-}
-
+// main ui for station controls
 void Station::renderControlsPanel() {
     bool needsRegeneration = false;
     LSystemParams& params = m_lsystem.getParams();
@@ -360,121 +390,177 @@ void Station::renderControlsPanel() {
     ImGui::PopStyleColor();
     ImGui::Spacing();
 
-    // Generation params
+    // show/hide station
+    PushButtonColors(COLOR_BUTTON_PRIMARY, COLOR_BUTTON_PRIMARY_HOVER, COLOR_BUTTON_PRIMARY_ACTIVE);
+    if (ImGui::Button(m_drawStation ? "Disable 3D Space Station" : "Enable 3D Space Station", ImVec2(-1, 40))) {
+        m_drawStation = !m_drawStation;
+    }
+    ImGui::PopStyleColor(3);
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    if (!m_drawStation) {
+        return;
+    }
+
+    // generation params
     if (ImGui::CollapsingHeader("Generation Parameters", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::Spacing();
+
         ImGui::Text("Complexity");
         ImGui::PushItemWidth(-1);
         needsRegeneration |= ImGui::SliderInt("##Iterations", &params.iterations, 1, 6);
         ImGui::PopItemWidth();
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Number of L-System iterations (higher = more complex station)");
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Number of L-System iterations");
         ImGui::Spacing();
-        ImGui::Separator();
-        ImGui::Spacing();
-        ImGui::Text("Module Sizing (10, 20, or 30 units)");
+
+        ImGui::Text("Max Module Size");
+        int moduleSizeIndex = params.baseLength <= 15.0f ? 0 : (params.baseLength <= 25.0f ? 1 : 2);
         ImGui::PushItemWidth(-1);
-        needsRegeneration |= ImGui::SliderFloat("##BaseLength", &params.baseLength, 10.0f, 30.0f, "Base: %.0f");
+        if (ImGui::SliderInt("##ModuleSize", &moduleSizeIndex, 0, 2,
+            moduleSizeIndex == 0 ? "1 (10 units)" : (moduleSizeIndex == 1 ? "2 (20 units)" : "3 (30 units)"))) {
+            params.baseLength = moduleSizeIndex == 0 ? 10.0f : (moduleSizeIndex == 1 ? 20.0f : 30.0f);
+            needsRegeneration = true;
+        }
         ImGui::PopItemWidth();
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Initial module length (10, 20, or 30)");
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Maximum module size");
+        ImGui::Spacing();
+
+        ImGui::Text("Decay");
         ImGui::PushItemWidth(-1);
-        needsRegeneration |= ImGui::SliderFloat("##LengthDecay", &params.lengthDecay, 0.5f, 1.0f, "Decay: %.2f");
+        needsRegeneration |= ImGui::SliderFloat("##LengthDecay", &params.lengthDecay, 0.5f, 1.0f, "%.2f");
         ImGui::PopItemWidth();
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("How much modules shrink each generation");
         ImGui::Spacing();
-        ImGui::TextWrapped("Note: Modules are quantized to 10, 20, or 30 units. Junctions (5.9 units) are placed between modules.");
-        ImGui::Spacing();
-    }
 
-    // Topology
-    if (ImGui::CollapsingHeader("Topology & Connections", ImGuiTreeNodeFlags_DefaultOpen)) {
-        ImGui::Spacing();
-        // REMOVED Loop Connections
-        // ImGui::Checkbox("Allow Loop Connections", &params.allowLoops);
-        // if (ImGui::IsItemHovered()) ImGui::SetTooltip("Enable additional connecting modules between nearby junctions");
-        // if (params.allowLoops) {
-        //     ImGui::Spacing();
-        //     ImGui::Text("Loop Probability");
-        //     ImGui::PushItemWidth(-1);
-        //     needsRegeneration |= ImGui::SliderFloat("##ConnProb", &params.connectionProbability, 0.0f, 0.5f, "%.2f");
-        //     ImGui::PopItemWidth();
-        //     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Chance of creating an additional connecting module");
-        // }
-        ImGui::Spacing();
-        ImGui::Separator();
-        ImGui::Spacing();
-        needsRegeneration |= ImGui::Checkbox("Allow Vertical Modules", &params.allowVerticalModules);
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Enable modules that extend upward or downward");
-        if (params.allowVerticalModules) {
-            ImGui::Spacing();
-            ImGui::Text("Vertical Probability");
-            ImGui::PushItemWidth(-1);
-            needsRegeneration |= ImGui::SliderFloat("##VertProb", &params.verticalProbability, 0.0f, 1.0f, "%.2f"); // RANGE INCREASED TO 1.0f
-            ImGui::PopItemWidth();
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Chance of creating a vertical module");
-        }
-        ImGui::Spacing();
-    }
-
-    // 3D rendering
-    if (ImGui::CollapsingHeader("3D Rendering", ImGuiTreeNodeFlags_DefaultOpen)) {
-        ImGui::Spacing();
-        ImGui::Checkbox("Enable 3D View", &m_drawStation);
-        ImGui::Spacing();
-
-        if (m_modelsLoaded) {
-            ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "All models loaded");
-        }
-        else {
-            ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "Models not loaded");
-        }
-
-        ImGui::Spacing();
-    }
-
-    // Materials
-    if (ImGui::CollapsingHeader("Model Materials", ImGuiTreeNodeFlags_DefaultOpen)) {
-        ImGui::Spacing();
-        ImGui::TextWrapped("Modules are rendered using three different sized models (10, 20, 30 units) with PBR materials. Junctions are 5.9 units.");
-        ImGui::Spacing();
-
-        if (m_modelsLoaded) {
-            ImGui::Text("Loaded models:");
-            ImGui::BulletText("module1.obj (10 units)");
-            ImGui::BulletText("module2.obj (20 units)");
-            ImGui::BulletText("module3.obj (30 units)");
-            ImGui::BulletText("junction.obj (5.9 units)");
-            ImGui::Spacing();
-            ImGui::Text("Materials cycle: 0=Gold, 1=Plastic, 2=Cloth");
-        }
-        else {
-            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "Models not loaded");
-        }
-
-        ImGui::Spacing();
-    }
-
-    // Random seed
-    if (ImGui::CollapsingHeader("Random Seed", ImGuiTreeNodeFlags_DefaultOpen)) {
-        ImGui::Spacing();
+        ImGui::Text("Seed");
         ImGui::PushItemWidth(-1);
         needsRegeneration |= ImGui::SliderInt("##Seed", &params.seed, 1, 99999);
         ImGui::PopItemWidth();
         ImGui::Spacing();
-        if (ImGui::Button("New Random Seed", ImVec2(-1, 0))) {
-            std::random_device rd;
-            std::mt19937 gen(rd());
-            std::uniform_int_distribution<> dis(1, 99999);
-            params.seed = dis(gen);
-            needsRegeneration = true;
-        }
-        ImGui::Spacing();
     }
+
+    // buttons for toggles
+    ImGui::Spacing();
+    float buttonWidth = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x * 2) / 3.0f;
+
+    // vertical modules toggle
+    PushButtonColors(
+        params.allowVerticalModules ? COLOR_BUTTON_SUCCESS : COLOR_BUTTON_INACTIVE,
+        params.allowVerticalModules ? COLOR_BUTTON_SUCCESS_HOVER : COLOR_BUTTON_INACTIVE_HOVER,
+        params.allowVerticalModules ? COLOR_BUTTON_SUCCESS_ACTIVE : COLOR_BUTTON_INACTIVE_ACTIVE
+    );
+    if (ImGui::Button(params.allowVerticalModules ? "Vertical Modules ON" : "Vertical Modules OFF",
+        ImVec2(buttonWidth, 30))) {
+        params.allowVerticalModules = !params.allowVerticalModules;
+        needsRegeneration = true;
+    }
+    ImGui::PopStyleColor(3);
+    ImGui::SameLine();
+
+    // solar panels toggle
+    PushButtonColors(
+        params.enableSolarPanels ? COLOR_BUTTON_SUCCESS : COLOR_BUTTON_INACTIVE,
+        params.enableSolarPanels ? COLOR_BUTTON_SUCCESS_HOVER : COLOR_BUTTON_INACTIVE_HOVER,
+        params.enableSolarPanels ? COLOR_BUTTON_SUCCESS_ACTIVE : COLOR_BUTTON_INACTIVE_ACTIVE
+    );
+    if (ImGui::Button(params.enableSolarPanels ? "Solar Panels ON" : "Solar Panels OFF",
+        ImVec2(buttonWidth, 30))) {
+        params.enableSolarPanels = !params.enableSolarPanels;
+        needsRegeneration = true;
+    }
+    ImGui::PopStyleColor(3);
+    ImGui::SameLine();
+
+    // random seed
+    PushButtonColors(COLOR_BUTTON_WARNING, COLOR_BUTTON_WARNING_HOVER, COLOR_BUTTON_WARNING_ACTIVE);
+    if (ImGui::Button("Randomise Seed", ImVec2(buttonWidth, 30))) {
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        std::uniform_int_distribution<> dis(1, 99999);
+        params.seed = dis(gen);
+        needsRegeneration = true;
+    }
+    ImGui::PopStyleColor(3);
 
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::Spacing();
 
-    // Stats
+    // model params
+    if (ImGui::CollapsingHeader("Model Parameters", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::Spacing();
+
+        if (params.allowVerticalModules) {
+            ImGui::Text("Vertical Probability");
+            ImGui::PushItemWidth(-1);
+            needsRegeneration |= ImGui::SliderFloat("##VertProb", &params.verticalProbability, 0.0f, 1.0f, "%.2f");
+            ImGui::PopItemWidth();
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Chance of creating a vertical module");
+            ImGui::Spacing();
+        }
+
+        if (params.enableSolarPanels) {
+            ImGui::Text("Panel Probability");
+            ImGui::PushItemWidth(-1);
+            needsRegeneration |= ImGui::SliderFloat("##SolarProb", &params.solarPanelProbability, 0.0f, 1.0f, "%.2f");
+            ImGui::PopItemWidth();
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Chance of a module having solar panels");
+            ImGui::Spacing();
+
+            ImGui::Text("Offset from Centre");
+            ImGui::PushItemWidth(-1);
+            ImGui::SliderFloat("##PanelOffset", &m_renderParams.solarPanelOffset, 1.0f, 5.0f, "%.1f units");
+            ImGui::PopItemWidth();
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Distance from module center to solar panels");
+            ImGui::Spacing();
+        }
+    }
+
+    // material params
+    if (ImGui::CollapsingHeader("Material Parameters", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::Spacing();
+
+        float halfWidth = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) / 2.0f;
+
+        PushButtonColors(COLOR_BUTTON_SUCCESS, COLOR_BUTTON_SUCCESS_HOVER, COLOR_BUTTON_SUCCESS_ACTIVE);
+        if (ImGui::Button("Randomise", ImVec2(halfWidth, 30))) {
+            randomizeMaterials();
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Randomly assign materials to all slots");
+        ImGui::PopStyleColor(3);
+        ImGui::SameLine();
+
+        PushButtonColors(COLOR_BUTTON_DANGER, COLOR_BUTTON_DANGER_HOVER, COLOR_BUTTON_DANGER_ACTIVE);
+        if (ImGui::Button("Reset", ImVec2(halfWidth, 30))) {
+            resetMaterials();
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Reset materials to default");
+        ImGui::PopStyleColor(3);
+
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        if (m_modelsLoaded) {
+            ImGui::Text("Individual Object Materials:");
+            ImGui::Spacing();
+
+            renderMaterialControls("Module 1 (10 units)", m_module1Materials);
+            renderMaterialControls("Module 2 (20 units)", m_module2Materials);
+            renderMaterialControls("Module 3 (30 units)", m_module3Materials);
+            renderMaterialControls("Junction", m_junctionMaterials);
+            renderMaterialControls("Solar Panel", m_solarPanelMaterials);
+        }
+        else {
+            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "Load models to configure materials");
+        }
+
+        ImGui::Spacing();
+    }
+
+    // stats
     if (ImGui::CollapsingHeader("Statistics", ImGuiTreeNodeFlags_DefaultOpen)) {
         const auto& modules = m_lsystem.getModules();
         const auto& junctions = m_lsystem.getJunctions();
@@ -482,354 +568,75 @@ void Station::renderControlsPanel() {
 
         ImGui::Spacing();
         ImGui::Columns(2, "stats", false);
-        ImGui::Text("Total Modules:");
-        ImGui::NextColumn();
-        ImGui::Text("%zu", modules.size());
-        ImGui::NextColumn();
 
         int verticalCount = 0;
+        int solarPanelCount = 0;
+        for (const auto& module : modules) {
+            if (module.isVertical) verticalCount++;
+            if (module.hasSolarPanels) solarPanelCount++;
+        }
+
+        ImGui::Text("Total Modules:"); ImGui::NextColumn();
+        ImGui::Text("%zu", modules.size()); ImGui::NextColumn();
+        ImGui::Text("Vertical Modules:"); ImGui::NextColumn();
+        ImGui::Text("%d", verticalCount); ImGui::NextColumn();
+        ImGui::Text("With Solar Panels:"); ImGui::NextColumn();
+        ImGui::Text("%d", solarPanelCount); ImGui::NextColumn();
+        ImGui::Text("Junctions:"); ImGui::NextColumn();
+        ImGui::Text("%zu", junctions.size()); ImGui::NextColumn();
+        ImGui::Text("Sequence Length:"); ImGui::NextColumn();
+        ImGui::Text("%zu", sequence.length()); ImGui::NextColumn();
+
+        ImGui::Columns(1);
+        ImGui::Spacing();
+    }
+
+    // obj stats
+    if (ImGui::CollapsingHeader("OBJ Statistics", ImGuiTreeNodeFlags_DefaultOpen)) {
+        const auto& modules = m_lsystem.getModules();
+
+        ImGui::Spacing();
+        ImGui::Columns(2, "obj_stats", false);
+
         int length10Count = 0;
         int length20Count = 0;
         int length30Count = 0;
 
         for (const auto& module : modules) {
-            if (module.isVertical) verticalCount++;
             if (module.length <= 15.0f) length10Count++;
             else if (module.length <= 25.0f) length20Count++;
             else length30Count++;
         }
 
-        ImGui::Text("Vertical Modules:");
-        ImGui::NextColumn();
-        ImGui::Text("%d", verticalCount);
-        ImGui::NextColumn();
+        ImGui::Text("10-unit Modules:"); ImGui::NextColumn();
+        ImGui::Text("%d", length10Count); ImGui::NextColumn();
+        ImGui::Text("20-unit Modules:"); ImGui::NextColumn();
+        ImGui::Text("%d", length20Count); ImGui::NextColumn();
+        ImGui::Text("30-unit Modules:"); ImGui::NextColumn();
+        ImGui::Text("%d", length30Count); ImGui::NextColumn();
 
-        ImGui::Text("10-unit Modules:");
-        ImGui::NextColumn();
-        ImGui::Text("%d", length10Count);
-        ImGui::NextColumn();
-
-        ImGui::Text("20-unit Modules:");
-        ImGui::NextColumn();
-        ImGui::Text("%d", length20Count);
-        ImGui::NextColumn();
-
-        ImGui::Text("30-unit Modules:");
-        ImGui::NextColumn();
-        ImGui::Text("%d", length30Count);
-        ImGui::NextColumn();
-
-        ImGui::Text("Junctions:");
-        ImGui::NextColumn();
-        ImGui::Text("%zu", junctions.size());
-        ImGui::NextColumn();
-
-        ImGui::Text("Sequence Length:");
-        ImGui::NextColumn();
-        ImGui::Text("%zu", sequence.length());
-        ImGui::NextColumn();
+        if (m_modelsLoaded) {
+            ImGui::Text("Models Status:"); ImGui::NextColumn();
+            ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Loaded"); ImGui::NextColumn();
+        }
 
         ImGui::Columns(1);
         ImGui::Spacing();
-        ImGui::Text("Module Type Breakdown");
-        ImGui::Separator();
-
-        std::vector<int> moduleCounts(NUM_MODULE_TYPES, 0);
-        for (const auto& module : modules)
-            if (module.moduleType < NUM_MODULE_TYPES)
-                moduleCounts[module.moduleType]++;
-
-        const char* moduleNames[] = { "Corridors", "Habitats", "Docking Bays", "Power Modules" };
-        const ImU32 moduleColors[] = {
-            IM_COL32(200, 200, 200, 255),
-            IM_COL32(100, 255, 100, 255),
-            IM_COL32(100, 150, 255, 255),
-            IM_COL32(255, 220, 100, 255)
-        };
-
-        for (int i = 0; i < NUM_MODULE_TYPES; ++i) {
-            ImGui::BulletText("%s:", moduleNames[i]);
-            ImGui::SameLine(160);
-            int color = moduleColors[i];
-            float r = ((color >> 0) & 0xFF) / 255.0f;
-            float g = ((color >> 8) & 0xFF) / 255.0f;
-            float b = ((color >> 16) & 0xFF) / 255.0f;
-            ImGui::TextColored(ImVec4(r, g, b, 1.0f), "%d", moduleCounts[i]);
-        }
-        ImGui::Spacing();
     }
 
-    if (needsRegeneration) regenerate();
+    if (needsRegeneration) {
+        regenerate();
+    }
 }
 
+// draw the gui
+//
 void Station::renderGUI() {
-    applyUIStyle();
-    ImGui::SetNextWindowPos(ImVec2(20, 20), ImGuiSetCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(900, 720), ImGuiSetCond_FirstUseEver);
+    ImGui::SetNextWindowPos(ImVec2(5, 540), ImGuiSetCond_Once);
+    ImGui::SetNextWindowSize(ImVec2(400, 460), ImGuiSetCond_Once);
     ImGui::Begin("Space Station Generator", nullptr);
-    ImGui::BeginChild("LeftPane", ImVec2(420, 0), true);
+
     renderControlsPanel();
-    ImGui::EndChild();
-    ImGui::SameLine();
-    ImGui::BeginChild("RightPane", ImVec2(0, 0), true);
-    renderPreviewPanel();
-    ImGui::EndChild();
+
     ImGui::End();
-}
-
-void Station::renderPreviewPanel() {
-    ImGui::Spacing();
-    ImGui::Text("STATION LAYOUT PREVIEW");
-    ImGui::Separator();
-    ImGui::Spacing();
-
-    ImGui::Columns(3, "zoom", false);
-    if (ImGui::Button("[-] Zoom Out", ImVec2(-1, 0)))
-        m_previewZoom = glm::clamp(m_previewZoom / 1.2f, 0.2f, 8.0f);
-    ImGui::NextColumn();
-
-    if (ImGui::Button("[=] Reset", ImVec2(-1, 0))) {
-        m_previewZoom = 1.0f;
-        m_previewPan = vec2(0.0f);
-    }
-    ImGui::NextColumn();
-
-    if (ImGui::Button("[+] Zoom In", ImVec2(-1, 0)))
-        m_previewZoom = glm::clamp(m_previewZoom * 1.2f, 0.2f, 8.0f);
-    ImGui::NextColumn();
-    ImGui::Columns(1);
-
-    ImGui::Text("Zoom: %.1fx", m_previewZoom);
-    ImGui::Spacing();
-    ImGui::Separator();
-    ImGui::Spacing();
-
-    ImGui::Text("Legend:");
-    ImGui::Columns(2, "legend", false);
-
-    ImDrawList* draw_list = ImGui::GetWindowDrawList();
-    float legendLineLength = 20.0f;
-    float legendLineThickness = 4.0f;
-    float legendCircleSize = 6.0f;
-
-    const char* moduleNames[] = { "Corridor", "Habitat", "Docking Bay", "Power" };
-    for (int i = 0; i < NUM_MODULE_TYPES; ++i) {
-        ImVec2 cursor = ImGui::GetCursorScreenPos();
-        draw_list->AddLine(
-            ImVec2(cursor.x, cursor.y + legendCircleSize),
-            ImVec2(cursor.x + legendLineLength, cursor.y + legendCircleSize),
-            MODULE_COLORS[i],
-            legendLineThickness
-        );
-        ImGui::Dummy(ImVec2(legendLineLength, legendCircleSize * 2));
-        ImGui::SameLine();
-        ImGui::Text("%s Module", moduleNames[i]);
-        ImGui::NextColumn();
-    }
-
-    ImVec2 cursor = ImGui::GetCursorScreenPos();
-    draw_list->AddCircleFilled(
-        ImVec2(cursor.x + legendCircleSize, cursor.y + legendCircleSize),
-        legendCircleSize,
-        JUNCTION_COLOR
-    );
-    ImGui::Dummy(ImVec2(legendCircleSize * 2, legendCircleSize * 2));
-    ImGui::SameLine();
-    ImGui::Text("Junction");
-    ImGui::NextColumn();
-
-    cursor = ImGui::GetCursorScreenPos();
-    draw_list->AddCircleFilled(
-        ImVec2(cursor.x + legendCircleSize, cursor.y + legendCircleSize),
-        legendCircleSize,
-        VERTICAL_JUNCTION_COLOR
-    );
-    ImGui::Dummy(ImVec2(legendCircleSize * 2, legendCircleSize * 2));
-    ImGui::SameLine();
-    ImGui::Text("Vertical Junction");
-    ImGui::NextColumn();
-
-    ImGui::Columns(1);
-    ImGui::Spacing();
-    ImGui::Separator();
-    ImGui::Spacing();
-
-    drawVisualization();
-    ImGui::Spacing();
-    ImGui::Separator();
-    ImGui::Spacing();
-
-    ImGui::TextWrapped("Tip: Use the zoom controls to explore the station layout. "
-        "Modules are rendered with proper spacing accounting for junction size (5.9 units).");
-}
-
-void Station::calculateBounds(vec2& minBounds, vec2& maxBounds) const {
-    const auto& junctions = m_lsystem.getJunctions();
-
-    minBounds = vec2(FLT_MAX);
-    maxBounds = vec2(-FLT_MAX);
-    for (const auto& junction : junctions) {
-        minBounds = glm::min(minBounds, junction.position);
-        maxBounds = glm::max(maxBounds, junction.position);
-    }
-    vec2 padding(25.0f);
-    minBounds -= padding;
-    maxBounds += padding;
-}
-
-void Station::drawVisualization() {
-    const auto& modules = m_lsystem.getModules();
-    const auto& junctions = m_lsystem.getJunctions();
-
-    ImVec2 canvas_pos = ImGui::GetCursorScreenPos();
-    ImVec2 available = ImGui::GetContentRegionAvail();
-    ImVec2 canvas_size(
-        std::max(300.0f, available.x),
-        std::max(400.0f, available.y - 80.0f)
-    );
-
-    ImDrawList* draw_list = ImGui::GetWindowDrawList();
-    draw_list->PushClipRect(canvas_pos, ImVec2(canvas_pos.x + canvas_size.x, canvas_pos.y + canvas_size.y), true);
-
-    vec2 minBounds, maxBounds;
-    calculateBounds(minBounds, maxBounds);
-    vec2 worldSize = maxBounds - minBounds;
-
-    float fitScale = (worldSize.x > 0.0f && worldSize.y > 0.0f)
-        ? std::min(canvas_size.x / worldSize.x, canvas_size.y / worldSize.y) * 0.95f
-        : 1.0f;
-    float scale = fitScale * m_previewZoom;
-
-    vec2 offset(
-        (canvas_size.x - (worldSize.x * scale)) * 0.5f + m_previewPan.x,
-        (canvas_size.y - (worldSize.y * scale)) * 0.5f + m_previewPan.y
-    );
-
-    draw_list->AddRectFilled(
-        canvas_pos,
-        ImVec2(canvas_pos.x + canvas_size.x, canvas_pos.y + canvas_size.y),
-        IM_COL32(20, 20, 25, 255)
-    );
-    draw_list->AddRect(
-        canvas_pos,
-        ImVec2(canvas_pos.x + canvas_size.x, canvas_pos.y + canvas_size.y),
-        IM_COL32(100, 100, 120, 255),
-        0.0f,
-        0,
-        2.0f
-    );
-
-    float gridSpacing = 50.0f * scale;
-    if (gridSpacing > 10.0f) {
-        for (float x = fmod(offset.x, gridSpacing); x < canvas_size.x; x += gridSpacing) {
-            draw_list->AddLine(
-                ImVec2(canvas_pos.x + x, canvas_pos.y),
-                ImVec2(canvas_pos.x + x, canvas_pos.y + canvas_size.y),
-                IM_COL32(40, 40, 45, 255)
-            );
-        }
-        for (float y = fmod(offset.y, gridSpacing); y < canvas_size.y; y += gridSpacing) {
-            draw_list->AddLine(
-                ImVec2(canvas_pos.x, canvas_pos.y + y),
-                ImVec2(canvas_pos.x + canvas_size.x, canvas_pos.y + y),
-                IM_COL32(40, 40, 45, 255)
-            );
-        }
-    }
-
-    auto worldToScreen = [&](const vec2& worldPos) -> ImVec2 {
-        return ImVec2(
-            canvas_pos.x + offset.x + (worldPos.x - minBounds.x) * scale,
-            canvas_pos.y + offset.y + (worldPos.y - minBounds.y) * scale
-        );
-        };
-
-    float moduleLineThickness = 6.0f * glm::clamp(m_previewZoom, 0.5f, 2.0f);
-
-    // Draw modules - now properly accounting for junction spacing in visualization
-    for (const auto& module : modules) {
-        ImU32 color = (module.moduleType >= 0 && module.moduleType < NUM_MODULE_TYPES)
-            ? MODULE_COLORS[module.moduleType]
-            : IM_COL32(200, 100, 100, 255);
-
-        if (module.isVertical) {
-            ImVec2 p = worldToScreen(module.startPos);
-            float arrowSize = 8.0f * glm::clamp(m_previewZoom, 0.5f, 2.0f);
-
-            draw_list->AddLine(
-                ImVec2(p.x + 1, p.y - arrowSize + 1),
-                ImVec2(p.x + 1, p.y + arrowSize + 1),
-                IM_COL32(0, 0, 0, 80),
-                moduleLineThickness
-            );
-            draw_list->AddLine(
-                ImVec2(p.x, p.y - arrowSize),
-                ImVec2(p.x, p.y + arrowSize),
-                color,
-                moduleLineThickness
-            );
-            draw_list->AddLine(
-                ImVec2(p.x - arrowSize * 0.5f, p.y),
-                ImVec2(p.x + arrowSize * 0.5f, p.y),
-                color,
-                moduleLineThickness * 0.7f
-            );
-        }
-        else {
-            // For horizontal modules, draw line accounting for junction radius
-            vec2 direction = normalize(module.endPos - module.startPos);
-            vec2 visualStartPos = module.startPos + direction * JUNCTION_RADIUS;
-            vec2 visualEndPos = module.endPos - direction * JUNCTION_RADIUS;
-
-            ImVec2 p1 = worldToScreen(visualStartPos);
-            ImVec2 p2 = worldToScreen(visualEndPos);
-
-            draw_list->AddLine(
-                ImVec2(p1.x + 1, p1.y + 1),
-                ImVec2(p2.x + 1, p2.y + 1),
-                IM_COL32(0, 0, 0, 80),
-                moduleLineThickness
-            );
-            draw_list->AddLine(p1, p2, color, moduleLineThickness);
-        }
-    }
-
-    float junctionRadius = 4.0f * glm::clamp(m_previewZoom, 0.5f, 2.0f);
-
-    for (const auto& junction : junctions) {
-        ImVec2 center = worldToScreen(junction.position);
-        ImU32 jColor = (std::abs(junction.verticalOffset) > 0.1f)
-            ? VERTICAL_JUNCTION_COLOR
-            : JUNCTION_COLOR;
-        draw_list->AddCircleFilled(
-            ImVec2(center.x + 1, center.y + 1),
-            junctionRadius,
-            IM_COL32(0, 0, 0, 80),
-            12
-        );
-        draw_list->AddCircleFilled(center, junctionRadius, jColor, 12);
-
-        ImU32 borderColor = (std::abs(junction.verticalOffset) > 0.1f)
-            ? IM_COL32(180, 100, 50, 255)
-            : IM_COL32(80, 80, 90, 255);
-        draw_list->AddCircle(center, junctionRadius, borderColor, 12, 1.5f);
-    }
-
-    draw_list->PopClipRect();
-
-    ImGui::SetCursorScreenPos(canvas_pos);
-    ImGui::InvisibleButton("canvas", canvas_size);
-
-    if (ImGui::IsItemActive() && ImGui::IsMouseDragging(0)) {
-        ImVec2 delta = ImGui::GetIO().MouseDelta;
-        m_previewPan.x += delta.x;
-        m_previewPan.y += delta.y;
-    }
-
-    if (ImGui::IsItemHovered()) {
-        float wheel = ImGui::GetIO().MouseWheel;
-        if (wheel != 0.0f) {
-            m_previewZoom = glm::clamp(m_previewZoom * (1.0f + wheel * 0.1f), 0.2f, 8.0f);
-        }
-    }
 }

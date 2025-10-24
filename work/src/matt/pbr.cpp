@@ -18,6 +18,11 @@ textureData gold;
 textureData plastic;
 textureData cloth;
 
+//station textures
+textureData panel;
+textureData solar;
+textureData metal;
+
 GLuint m_shader = 0;
 GLuint m_default_shader = 0;
 GLuint m_pbr_shader = 0;
@@ -113,6 +118,9 @@ void loadPBRShaders(const std::string& hdrPath = CGRA_SRCDIR + std::string("//re
 		gold = loadPBRTextures(CGRA_SRCDIR + std::string("/res/textures/gold"));
 		plastic = loadPBRTextures(CGRA_SRCDIR + std::string("/res/textures/plastic"));
 		cloth = loadPBRTextures(CGRA_SRCDIR + std::string("/res/textures/cloth"));
+		panel = loadPBRTextures(CGRA_SRCDIR + std::string("/res/textures/panel"));
+		solar = loadPBRTextures(CGRA_SRCDIR + std::string("/res/textures/solar"));
+		metal = loadPBRTextures(CGRA_SRCDIR + std::string("/res/textures/metal"));
 		texturesLoaded = true;
 	}
 

@@ -2,101 +2,95 @@
 
 #include <cgra/cgra_mesh.hpp>
 #include <glm/glm.hpp>
-#include <string>
+#include <array>
 #include <vector>
 
 #include "lsystem.hpp"
 
-// Forward declaration for multi_mesh_model
 namespace cgra {
-    struct mesh_group;
     struct multi_mesh_model;
 }
 
+// rendering params for station
 struct Rendering3DParams {
-    float junctionRadius = 1.0f;
-    float gapMultiplier = 0.0f;
+    float solarPanelOffset = 4.5f;
 };
 
+// main station class
 class Station {
 public:
+    // different object types
+    enum class ObjectType {
+        MODULE1,      // small module
+        MODULE2,      // medium module
+        MODULE3,      // big module
+        JUNCTION,     // module connector
+        SOLAR_PANEL   // solar attachment
+    };
+
     Station();
     ~Station();
 
-    // Mesh generation
-    cgra::gl_mesh createSphereMesh(float radius, int stacks, int slices);
+    Station(const Station&) = delete;
+    Station& operator=(const Station&) = delete;
 
-    // L-System generation (delegates to LSystem)
-    void initializeLSystem();
     void regenerate();
-
-    // GUI rendering
     void renderGUI();
+    void renderMultiMaterialModel(const glm::mat4& view, const glm::mat4& proj,
+        GLuint pbrShader, const glm::vec3& camPos);
 
-    // 3D rendering
-    void render3DStation(const glm::mat4& view, const glm::mat4& proj, GLuint shader);
+    void randomizeMaterials();
+    void resetMaterials();
 
-    // Multi-material model rendering (now uses 3 different module sizes + junction)
-    void renderMultiMaterialModel(const glm::mat4& view, const glm::mat4& proj, GLuint pbrShader, const glm::vec3& camPos);
-
-    // Accessors
     LSystemParams& getParams() { return m_lsystem.getParams(); }
     Rendering3DParams& getRenderParams() { return m_renderParams; }
     const std::vector<StationModule>& getModules() const { return m_lsystem.getModules(); }
     const std::vector<ModuleJunction>& getJunctions() const { return m_lsystem.getJunctions(); }
     bool shouldDrawStation() const { return m_drawStation; }
-    bool shouldShowModel() const { return m_showModelButton; }
 
 private:
-    // L-System (delegated)
+    static constexpr int NUM_MATERIALS_PER_OBJECT = 4;
+    static constexpr int NUM_PBR_MATERIALS = 6;
+
     LSystem m_lsystem;
-
-    // Visualization
-    float m_previewZoom = 1.0f;
-    glm::vec2 m_previewPan = glm::vec2(0.0f);
     bool m_drawStation = false;
-
-    // 3D rendering
-    Rendering3DParams m_renderParams;
-    cgra::gl_mesh m_junctionMesh;
-    bool m_meshNeedsRebuild = true;
-
-    // Multi-material model data - now with 3 module sizes + junction
-    cgra::multi_mesh_model* m_module1;      // 10 units (10x5x5)
-    cgra::multi_mesh_model* m_module2;      // 20 units (20x5x5)
-    cgra::multi_mesh_model* m_module3;      // 30 units (30x5x5)
-    cgra::multi_mesh_model* m_junctionModel; // 5.9x5.9x5.9
-    std::vector<int> m_materialAssignments; // Cyclical pattern: 0,1,2,0,1,2...
     bool m_modelsLoaded = false;
+    Rendering3DParams m_renderParams;
 
-    // Model loading and material assignment
+    // models for different modules
+    cgra::multi_mesh_model* m_module1 = nullptr;
+    cgra::multi_mesh_model* m_module2 = nullptr;
+    cgra::multi_mesh_model* m_module3 = nullptr;
+    cgra::multi_mesh_model* m_junctionModel = nullptr;
+    cgra::multi_mesh_model* m_solarPanelModel = nullptr;
+
+    // material slots: 0=gold, 1=plastic, 2=cloth, 3=panel, 4=solar, 5=metal
+    std::array<int, NUM_MATERIALS_PER_OBJECT> m_module1Materials;
+    std::array<int, NUM_MATERIALS_PER_OBJECT> m_module2Materials;
+    std::array<int, NUM_MATERIALS_PER_OBJECT> m_module3Materials;
+    std::array<int, NUM_MATERIALS_PER_OBJECT> m_junctionMaterials;
+    std::array<int, NUM_MATERIALS_PER_OBJECT> m_solarPanelMaterials;
+
+    // helpers
+    void initializeLSystem();
     void loadModuleModels();
-    void assignCyclicalMaterials();
+    void initializeDefaultMaterials();
     void destroyModels();
-    int getMaterialIndexForGroup(size_t groupIndex) const;
 
-    // Get the appropriate model based on module length
     cgra::multi_mesh_model* getModelForLength(float length) const;
+    ObjectType getObjectTypeForLength(float length) const;
+    int getMaterialIndexForObject(ObjectType objType, size_t materialSlot) const;
 
-    // Calculate transforms for modules and junctions
     glm::mat4 calculateModuleTransform(const StationModule& module) const;
     glm::mat4 calculateJunctionTransform(const ModuleJunction& junction) const;
+    glm::mat4 calculateSolarPanelTransform(const StationModule& module, bool isLeftPanel) const;
 
-    // Render a model with PBR materials
-    void renderModelWithMaterials(cgra::multi_mesh_model* model, const glm::mat4& modelTransform,
-        GLuint pbrShader, const glm::mat4& view, const glm::mat4& proj,
+    void renderModelWithMaterials(cgra::multi_mesh_model* model, ObjectType objType,
+        const glm::mat4& modelTransform, GLuint pbrShader,
+        const glm::mat4& view, const glm::mat4& proj,
         const glm::vec3& camPos);
 
-    // GUI
-    void applyUIStyle();
     void renderControlsPanel();
-    void renderPreviewPanel();
-    void drawVisualization();
-    void calculateBounds(glm::vec2& minBounds, glm::vec2& maxBounds) const;
-
-    // 3D rendering helpers
-    void rebuildMeshes();
-    glm::vec3 getModuleColor(int moduleType) const;
-
-    bool m_showModelButton = false;
+    void renderMaterialControls(const char* objectName,
+        std::array<int, NUM_MATERIALS_PER_OBJECT>& materials);
 };
