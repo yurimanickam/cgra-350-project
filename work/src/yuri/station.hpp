@@ -4,6 +4,7 @@
 #include <glm/glm.hpp>
 #include <string>
 #include <vector>
+#include <array>
 
 #include "lsystem.hpp"
 
@@ -21,6 +22,14 @@ struct Rendering3DParams {
 
 class Station {
 public:
+    enum class ObjectType {
+        MODULE1,
+        MODULE2,
+        MODULE3,
+        JUNCTION,
+        SOLAR_PANEL
+    };
+
     Station();
     ~Station();
 
@@ -39,6 +48,10 @@ public:
 
     // Multi-material model rendering (now uses 3 different module sizes + junction + solar panels)
     void renderMultiMaterialModel(const glm::mat4& view, const glm::mat4& proj, GLuint pbrShader, const glm::vec3& camPos);
+
+    // Material management
+    void randomizeMaterials();
+    void resetMaterials();
 
     // Accessors
     LSystemParams& getParams() { return m_lsystem.getParams(); }
@@ -64,17 +77,25 @@ private:
     cgra::multi_mesh_model* m_module3;      // 30 units (30x5x5)
     cgra::multi_mesh_model* m_junctionModel; // 5.9x5.9x5.9
     cgra::multi_mesh_model* m_solarPanelModel; // 4x2x0.2
-    std::vector<int> m_materialAssignments; // Cyclical pattern: 0,1,2,0,1,2...
     bool m_modelsLoaded = false;
+
+    // Material assignments - each object has 4 material slots
+    // Each slot can be assigned to one of 3 PBR materials (0=gold, 1=plastic, 2=cloth)
+    std::array<int, 4> m_module1Materials;
+    std::array<int, 4> m_module2Materials;
+    std::array<int, 4> m_module3Materials;
+    std::array<int, 4> m_junctionMaterials;
+    std::array<int, 4> m_solarPanelMaterials;
 
     // Model loading and material assignment
     void loadModuleModels();
-    void assignCyclicalMaterials();
+    void initializeDefaultMaterials();
     void destroyModels();
-    int getMaterialIndexForGroup(size_t groupIndex) const;
+    int getMaterialIndexForObject(ObjectType objType, size_t materialSlot) const;
 
     // Get the appropriate model based on module length
     cgra::multi_mesh_model* getModelForLength(float length) const;
+    ObjectType getObjectTypeForLength(float length) const;
 
     // Calculate transforms for modules, junctions, and solar panels
     glm::mat4 calculateModuleTransform(const StationModule& module) const;
@@ -82,13 +103,14 @@ private:
     glm::mat4 calculateSolarPanelTransform(const StationModule& module, bool isLeftPanel) const;
 
     // Render a model with PBR materials
-    void renderModelWithMaterials(cgra::multi_mesh_model* model, const glm::mat4& modelTransform,
-        GLuint pbrShader, const glm::mat4& view, const glm::mat4& proj,
-        const glm::vec3& camPos);
+    void renderModelWithMaterials(cgra::multi_mesh_model* model, ObjectType objType,
+        const glm::mat4& modelTransform, GLuint pbrShader,
+        const glm::mat4& view, const glm::mat4& proj, const glm::vec3& camPos);
 
     // GUI
     void applyUIStyle();
     void renderControlsPanel();
+    void renderMaterialControls(const char* objectName, std::array<int, 4>& materials);
 
     // 3D rendering helpers
     void rebuildMeshes();

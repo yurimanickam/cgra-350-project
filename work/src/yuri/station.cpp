@@ -8,6 +8,7 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <imgui.h>
 #include <iostream>
+#include <random>
 
 #include "yuri/objloader.hpp"
 #include "matt/pbr.hpp"
@@ -36,6 +37,8 @@ namespace {
     };
 
     constexpr int NUM_MODULE_TYPES = 4;
+    constexpr int NUM_MATERIALS_PER_OBJECT = 4;
+    constexpr int NUM_PBR_MATERIALS = 3; // 0=gold, 1=plastic, 2=cloth
 
     // junction colors
     const ImU32 JUNCTION_COLOR = IM_COL32(150, 150, 160, 255);
@@ -46,6 +49,9 @@ namespace {
     const ImVec4 COLOR_HEADER = ImVec4(0.26f, 0.59f, 0.98f, 0.80f);
     const ImVec4 COLOR_ACTIVE = ImVec4(0.26f, 0.59f, 0.98f, 1.00f);
     const ImVec4 COLOR_HOVER = ImVec4(0.26f, 0.59f, 0.98f, 0.67f);
+
+    // Material names for UI
+    const char* MATERIAL_NAMES[] = { "Gold", "Plastic", "Cloth" };
 }
 
 Station::Station()
@@ -58,6 +64,9 @@ Station::Station()
 {
     initializeLSystem();
     rebuildMeshes();
+
+    // Initialize material assignments with default values
+    initializeDefaultMaterials();
 
     // Load all module models, junction, and solar panel
     loadModuleModels();
@@ -95,6 +104,37 @@ void Station::destroyModels() {
     }
 }
 
+void Station::initializeDefaultMaterials() {
+    // Initialize with default pattern: 0,1,2,0
+    m_module1Materials = { 0, 1, 2, 0 };
+    m_module2Materials = { 0, 1, 2, 0 };
+    m_module3Materials = { 0, 1, 2, 0 };
+    m_junctionMaterials = { 0, 1, 2, 0 };
+    m_solarPanelMaterials = { 0, 1, 2, 0 };
+}
+
+void Station::randomizeMaterials() {
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<> dis(0, NUM_PBR_MATERIALS - 1);
+
+    // Randomize all material slots for all objects
+    for (int i = 0; i < NUM_MATERIALS_PER_OBJECT; ++i) {
+        m_module1Materials[i] = dis(gen);
+        m_module2Materials[i] = dis(gen);
+        m_module3Materials[i] = dis(gen);
+        m_junctionMaterials[i] = dis(gen);
+        m_solarPanelMaterials[i] = dis(gen);
+    }
+
+    std::cout << "Station: Randomized all material assignments" << std::endl;
+}
+
+void Station::resetMaterials() {
+    initializeDefaultMaterials();
+    std::cout << "Station: Reset all material assignments to default" << std::endl;
+}
+
 void Station::loadModuleModels() {
     destroyModels();
 
@@ -122,7 +162,6 @@ void Station::loadModuleModels() {
         !m_junctionModel->mesh_groups.empty() &&
         !m_solarPanelModel->mesh_groups.empty()) {
         m_modelsLoaded = true;
-        assignCyclicalMaterials();
         std::cout << "Station: All module models, junction, and solar panel loaded successfully" << std::endl;
     }
     else {
@@ -131,31 +170,37 @@ void Station::loadModuleModels() {
     }
 }
 
-void Station::assignCyclicalMaterials() {
-    m_materialAssignments.clear();
-
-    // Assign materials for module1
-    if (m_module1 && !m_module1->mesh_groups.empty()) {
-        for (size_t i = 0; i < m_module1->mesh_groups.size(); ++i) {
-            m_materialAssignments.push_back(i % 3);
-        }
+int Station::getMaterialIndexForObject(ObjectType objType, size_t materialSlot) const {
+    if (materialSlot >= NUM_MATERIALS_PER_OBJECT) {
+        return 1; // Default to plastic
     }
 
-    // Same pattern for all modules and junction
-    std::cout << "Station: Assigned cyclical PBR materials (0=gold, 1=plastic, 2=cloth)" << std::endl;
-}
-
-int Station::getMaterialIndexForGroup(size_t groupIndex) const {
-    if (groupIndex < m_materialAssignments.size()) {
-        return m_materialAssignments[groupIndex];
+    switch (objType) {
+    case ObjectType::MODULE1:
+        return m_module1Materials[materialSlot];
+    case ObjectType::MODULE2:
+        return m_module2Materials[materialSlot];
+    case ObjectType::MODULE3:
+        return m_module3Materials[materialSlot];
+    case ObjectType::JUNCTION:
+        return m_junctionMaterials[materialSlot];
+    case ObjectType::SOLAR_PANEL:
+        return m_solarPanelMaterials[materialSlot];
+    default:
+        return 1; // Default to plastic
     }
-    return 1; // Default to plastic
 }
 
 cgra::multi_mesh_model* Station::getModelForLength(float length) const {
     if (length <= 15.0f) return m_module1;      // 10 units
     else if (length <= 25.0f) return m_module2; // 20 units
     else return m_module3;                       // 30 units
+}
+
+Station::ObjectType Station::getObjectTypeForLength(float length) const {
+    if (length <= 15.0f) return ObjectType::MODULE1;
+    else if (length <= 25.0f) return ObjectType::MODULE2;
+    else return ObjectType::MODULE3;
 }
 
 glm::mat4 Station::calculateModuleTransform(const StationModule& module) const {
@@ -301,9 +346,9 @@ glm::mat4 Station::calculateSolarPanelTransform(const StationModule& module, boo
     }
 }
 
-void Station::renderModelWithMaterials(cgra::multi_mesh_model* model, const glm::mat4& modelTransform,
-    GLuint pbrShader, const glm::mat4& view, const glm::mat4& proj,
-    const glm::vec3& camPos) {
+void Station::renderModelWithMaterials(cgra::multi_mesh_model* model, ObjectType objType,
+    const glm::mat4& modelTransform, GLuint pbrShader,
+    const glm::mat4& view, const glm::mat4& proj, const glm::vec3& camPos) {
     if (!model || model->mesh_groups.empty()) return;
 
     glUseProgram(pbrShader);
@@ -315,8 +360,8 @@ void Station::renderModelWithMaterials(cgra::multi_mesh_model* model, const glm:
         value_ptr(transpose(inverse(mat3(modelTransform)))));
 
     // Render each material group with its assigned PBR material
-    for (size_t i = 0; i < model->mesh_groups.size(); ++i) {
-        int materialIndex = getMaterialIndexForGroup(i);
+    for (size_t i = 0; i < model->mesh_groups.size() && i < NUM_MATERIALS_PER_OBJECT; ++i) {
+        int materialIndex = getMaterialIndexForObject(objType, i);
 
         switch (materialIndex) {
         case 0:
@@ -349,25 +394,29 @@ void Station::renderMultiMaterialModel(const glm::mat4& view, const glm::mat4& p
     // Render all modules
     for (const auto& module : modules) {
         cgra::multi_mesh_model* model = getModelForLength(module.length);
+        ObjectType objType = getObjectTypeForLength(module.length);
         mat4 transform = calculateModuleTransform(module);
-        renderModelWithMaterials(model, transform, pbrShader, view, proj, camPos);
+        renderModelWithMaterials(model, objType, transform, pbrShader, view, proj, camPos);
 
         // Render solar panels if this module has them
         if (module.hasSolarPanels && m_solarPanelModel) {
             // Render left panel
             mat4 leftPanelTransform = calculateSolarPanelTransform(module, true);
-            renderModelWithMaterials(m_solarPanelModel, leftPanelTransform, pbrShader, view, proj, camPos);
+            renderModelWithMaterials(m_solarPanelModel, ObjectType::SOLAR_PANEL,
+                leftPanelTransform, pbrShader, view, proj, camPos);
 
             // Render right panel
             mat4 rightPanelTransform = calculateSolarPanelTransform(module, false);
-            renderModelWithMaterials(m_solarPanelModel, rightPanelTransform, pbrShader, view, proj, camPos);
+            renderModelWithMaterials(m_solarPanelModel, ObjectType::SOLAR_PANEL,
+                rightPanelTransform, pbrShader, view, proj, camPos);
         }
     }
 
     // Render all junctions
     for (const auto& junction : junctions) {
         mat4 transform = calculateJunctionTransform(junction);
-        renderModelWithMaterials(m_junctionModel, transform, pbrShader, view, proj, camPos);
+        renderModelWithMaterials(m_junctionModel, ObjectType::JUNCTION,
+            transform, pbrShader, view, proj, camPos);
     }
 }
 
@@ -439,6 +488,36 @@ void Station::applyUIStyle() {
     style.ItemSpacing = ImVec2(8, 4);
     style.ItemInnerSpacing = ImVec2(6, 4);
     style.IndentSpacing = 20.0f;
+}
+
+void Station::renderMaterialControls(const char* objectName, std::array<int, 4>& materials) {
+    ImGui::PushID(objectName);
+
+    if (ImGui::TreeNode(objectName)) {
+        ImGui::Spacing();
+
+        for (int i = 0; i < NUM_MATERIALS_PER_OBJECT; ++i) {
+            ImGui::PushID(i);
+
+            std::string label = "Material Slot " + std::to_string(i);
+            ImGui::Text("%s", label.c_str());
+            ImGui::SameLine(150);
+
+            ImGui::PushItemWidth(120);
+            if (ImGui::Combo(("##mat" + std::to_string(i)).c_str(), &materials[i],
+                MATERIAL_NAMES, NUM_PBR_MATERIALS)) {
+                // Material changed
+            }
+            ImGui::PopItemWidth();
+
+            ImGui::PopID();
+        }
+
+        ImGui::Spacing();
+        ImGui::TreePop();
+    }
+
+    ImGui::PopID();
 }
 
 void Station::renderControlsPanel() {
@@ -535,24 +614,60 @@ void Station::renderControlsPanel() {
         ImGui::Spacing();
     }
 
-    // Materials
-    if (ImGui::CollapsingHeader("Model Materials", ImGuiTreeNodeFlags_DefaultOpen)) {
+    // Material Assignment Controls
+    if (ImGui::CollapsingHeader("Material Assignment", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::Spacing();
-        ImGui::TextWrapped("Modules are rendered using three different sized models (10, 20, 30 units) with PBR materials. Junctions are 5.9 units. Solar panels are 4x2x0.2 units.");
+        ImGui::TextWrapped("Each object has 4 material slots. Assign PBR materials (Gold, Plastic, or Cloth) to each slot.");
+        ImGui::Spacing();
+        ImGui::Separator();
         ImGui::Spacing();
 
+        // Action buttons
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.7f, 0.3f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.8f, 0.4f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.1f, 0.6f, 0.2f, 1.0f));
+
+        if (ImGui::Button("Randomize All Materials", ImVec2(-1, 30))) {
+            randomizeMaterials();
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Randomly assign materials to all slots of all objects");
+        }
+
+        ImGui::PopStyleColor(3);
+
+        ImGui::Spacing();
+
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.3f, 0.2f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.8f, 0.4f, 0.3f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.6f, 0.2f, 0.1f, 1.0f));
+
+        if (ImGui::Button("Reset to Default Materials", ImVec2(-1, 30))) {
+            resetMaterials();
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Reset all materials to default pattern (Gold, Plastic, Cloth, Gold)");
+        }
+
+        ImGui::PopStyleColor(3);
+
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        // Individual object material controls
         if (m_modelsLoaded) {
-            ImGui::Text("Loaded models:");
-            ImGui::BulletText("module1.obj (10 units)");
-            ImGui::BulletText("module2.obj (20 units)");
-            ImGui::BulletText("module3.obj (30 units)");
-            ImGui::BulletText("junction.obj (5.9 units)");
-            ImGui::BulletText("solarPanel.obj (4x2x0.2 units)");
+            ImGui::Text("Individual Object Materials:");
             ImGui::Spacing();
-            ImGui::Text("Materials cycle: 0=Gold, 1=Plastic, 2=Cloth");
+
+            renderMaterialControls("Module 1 (10 units)", m_module1Materials);
+            renderMaterialControls("Module 2 (20 units)", m_module2Materials);
+            renderMaterialControls("Module 3 (30 units)", m_module3Materials);
+            renderMaterialControls("Junction", m_junctionMaterials);
+            renderMaterialControls("Solar Panel", m_solarPanelMaterials);
         }
         else {
-            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "Models not loaded");
+            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "Load models to configure materials");
         }
 
         ImGui::Spacing();
