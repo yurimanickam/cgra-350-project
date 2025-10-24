@@ -114,7 +114,7 @@ void Station::loadModuleModels() {
 
     // Load solar panel model
     m_solarPanelModel = new cgra::multi_mesh_model();
-    *m_solarPanelModel = cgra::load_multi_mesh_model(CGRA_SRCDIR + std::string("/res/assets/solarPanel.obj"));
+    *m_solarPanelModel = cgra::load_multi_mesh_model(CGRA_SRCDIR + std::string("/res/assets/solarPanel2.obj"));
 
     if (!m_module1->mesh_groups.empty() &&
         !m_module2->mesh_groups.empty() &&
