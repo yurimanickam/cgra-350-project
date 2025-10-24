@@ -36,4 +36,4 @@ sudo pacman -S glu
 To enable view of:  
 Lava lamp - check `Show Lava Lamp` checkbox.  
 PBR - check `Use Skybox` and or `Draw Sphere` checkbox.  
-Space Station - check `Enable 3D View` checkbox.  
+Space Station - press `Enable 3D View` button.  
