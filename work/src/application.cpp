@@ -174,7 +174,7 @@ void Application::render() {
 void Application::renderGUI() {
 	// setup window
 	ImGui::SetNextWindowPos(ImVec2(5, 5), ImGuiSetCond_Once);
-	ImGui::SetNextWindowSize(ImVec2(400, 350), ImGuiSetCond_Once);
+	ImGui::SetNextWindowSize(ImVec2(400, 340), ImGuiSetCond_Once);
 	ImGui::Begin("Lava Lamp Controls", 0);
 
 	// display current camera parameters
@@ -208,8 +208,8 @@ void Application::renderGUI() {
 
 	ImGui::End();
 
-	ImGui::SetNextWindowPos(ImVec2(5, 360), ImGuiSetCond_Once);
-	ImGui::SetNextWindowSize(ImVec2(400, 200), ImGuiSetCond_Once);
+	ImGui::SetNextWindowPos(ImVec2(5, 350), ImGuiSetCond_Once);
+	ImGui::SetNextWindowSize(ImVec2(400, 180), ImGuiSetCond_Once);
 	ImGui::Begin("PBR Controls", 0);
 
 	ImGui::Text("Physically Based Rendering (PBR) Settings");

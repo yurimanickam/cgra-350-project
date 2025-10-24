@@ -855,9 +855,9 @@ void Station::renderControlsPanel() {
 }
 
 void Station::renderGUI() {
-    applyUIStyle();
-    ImGui::SetNextWindowPos(ImVec2(20, 20), ImGuiSetCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(520, 720), ImGuiSetCond_FirstUseEver);
+    //applyUIStyle();
+    ImGui::SetNextWindowPos(ImVec2(5, 540), ImGuiSetCond_Once);
+    ImGui::SetNextWindowSize(ImVec2(400, 460), ImGuiSetCond_Once);
     ImGui::Begin("Space Station Generator", nullptr);
 
     renderControlsPanel();
