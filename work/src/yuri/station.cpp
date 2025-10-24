@@ -38,7 +38,7 @@ namespace {
 
     constexpr int NUM_MODULE_TYPES = 4;
     constexpr int NUM_MATERIALS_PER_OBJECT = 4;
-    constexpr int NUM_PBR_MATERIALS = 3; // 0=gold, 1=plastic, 2=cloth
+	constexpr int NUM_PBR_MATERIALS = 6; // 0=gold, 1=plastic, 2=cloth, 3=panel, 4=solar, 5=metal
 
     // junction colors
     const ImU32 JUNCTION_COLOR = IM_COL32(150, 150, 160, 255);
@@ -51,7 +51,7 @@ namespace {
     const ImVec4 COLOR_HOVER = ImVec4(0.26f, 0.59f, 0.98f, 0.67f);
 
     // Material names for UI
-    const char* MATERIAL_NAMES[] = { "Gold", "Plastic", "Cloth" };
+    const char* MATERIAL_NAMES[] = { "Gold", "Plastic", "Cloth", "Panel", "Solar", "Metal"};
 }
 
 Station::Station()
@@ -373,6 +373,16 @@ void Station::renderModelWithMaterials(cgra::multi_mesh_model* model, ObjectType
         case 2:
             bindPBRTextures(cloth);
             break;
+		case 3:
+			bindPBRTextures(panel);
+			break;
+		case 4:
+			bindPBRTextures(solar);
+			break;
+		case 5:
+			bindPBRTextures(metal);
+			break;
+
         default:
             bindPBRTextures(plastic);
             break;
