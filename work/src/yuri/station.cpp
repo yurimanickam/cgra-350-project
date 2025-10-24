@@ -27,7 +27,7 @@ namespace {
     constexpr float SOLAR_PANEL_WIDTH = 2.0f;
     constexpr float SOLAR_PANEL_HEIGHT = 0.2f;
 
-    // module colors for preview
+    // module colors for preview (kept for reference to materials)
     const ImU32 MODULE_COLORS[] = {
         IM_COL32(200, 200, 200, 255),
         IM_COL32(100, 255, 100, 255),
@@ -260,16 +260,11 @@ glm::mat4 Station::calculateSolarPanelTransform(const StationModule& module, boo
             transform = glm::rotate(transform, HALF_PI, glm::vec3(0.0f, 0.0f, 1.0f));
         }
 
-        // Now the module's forward axis is aligned with its actual direction
-        // Solar panels are offset perpendicular to the module axis (along local Z)
-        // Left panel on -Z side, right panel on +Z side
+        // Offset perpendicular to the module axis (along local Z)
         float sideOffset = isLeftPanel ? -m_renderParams.solarPanelOffset : m_renderParams.solarPanelOffset;
         transform = glm::translate(transform, glm::vec3(0.0f, 0.0f, sideOffset));
 
         // Rotate panels to face inward (toward the module)
-        // Solar panel default orientation: facing right (+Z direction)
-        // For left panel: rotate 180° around Y to face right (inward)
-        // For right panel: no rotation needed, already facing left (inward)
         if (isLeftPanel) {
             transform = glm::rotate(transform, PI, glm::vec3(0.0f, 1.0f, 0.0f));
         }
@@ -286,9 +281,6 @@ glm::mat4 Station::calculateSolarPanelTransform(const StationModule& module, boo
         float centerOffset = (moduleLength / 2.0f) + JUNCTION_RADIUS;
         glm::vec3 centerPos = fromPos3D + direction * centerOffset;
 
-        // Calculate perpendicular vector (to the left of the module direction)
-        glm::vec3 perpendicular = glm::vec3(-direction.z, 0.0f, direction.x);
-
         // Start with translation to center position
         glm::mat4 transform = glm::translate(glm::mat4(1.0f), centerPos);
 
@@ -296,21 +288,11 @@ glm::mat4 Station::calculateSolarPanelTransform(const StationModule& module, boo
         float angle = atan2(direction.z, direction.x);
         transform = glm::rotate(transform, angle, glm::vec3(0.0f, 1.0f, 0.0f));
 
-        // Now the module's coordinate system is aligned:
-        // +X: forward (module direction)
-        // +Y: up
-        // +Z: right (perpendicular to module, to the right)
-
         // Offset the solar panel perpendicular to the module
-        // Left panel: -Z (to the left)
-        // Right panel: +Z (to the right)
         float sideOffset = isLeftPanel ? -m_renderParams.solarPanelOffset : m_renderParams.solarPanelOffset;
         transform = glm::translate(transform, glm::vec3(0.0f, 0.0f, sideOffset));
 
         // Rotate panels to face inward (toward the module)
-        // Solar panel default orientation: facing right (+Z direction in local space)
-        // For left panel (-Z position): rotate 180° around Y to face right (inward toward module)
-        // For right panel (+Z position): no additional rotation needed, already facing left (inward)
         if (isLeftPanel) {
             transform = glm::rotate(transform, PI, glm::vec3(0.0f, 1.0f, 0.0f));
         }
@@ -440,16 +422,6 @@ void Station::initializeLSystem() {
 
 void Station::regenerate() {
     m_lsystem.regenerate();
-}
-
-glm::vec3 Station::getModuleColor(int moduleType) const {
-    switch (moduleType) {
-    case 0: return glm::vec3(0.8f, 0.8f, 0.8f);
-    case 1: return glm::vec3(0.4f, 0.9f, 0.4f);
-    case 2: return glm::vec3(0.4f, 0.6f, 0.9f);
-    case 3: return glm::vec3(0.9f, 0.86f, 0.4f);
-    default: return glm::vec3(0.7f, 0.7f, 0.7f);
-    }
 }
 
 void Station::render3DStation(const glm::mat4& view, const glm::mat4& proj, GLuint shader) {
@@ -607,7 +579,7 @@ void Station::renderControlsPanel() {
     ImGui::Separator();
     ImGui::Spacing();
 
-    // Stats
+    // Statistics
     if (ImGui::CollapsingHeader("Statistics", ImGuiTreeNodeFlags_DefaultOpen)) {
         const auto& modules = m_lsystem.getModules();
         const auto& junctions = m_lsystem.getJunctions();
@@ -671,32 +643,6 @@ void Station::renderControlsPanel() {
 
         ImGui::Columns(1);
         ImGui::Spacing();
-        ImGui::Text("Module Type Breakdown");
-        ImGui::Separator();
-
-        std::vector<int> moduleCounts(NUM_MODULE_TYPES, 0);
-        for (const auto& module : modules)
-            if (module.moduleType < NUM_MODULE_TYPES)
-                moduleCounts[module.moduleType]++;
-
-        const char* moduleNames[] = { "Corridors", "Habitats", "Docking Bays", "Power Modules" };
-        const ImU32 moduleColors[] = {
-            IM_COL32(200, 200, 200, 255),
-            IM_COL32(100, 255, 100, 255),
-            IM_COL32(100, 150, 255, 255),
-            IM_COL32(255, 220, 100, 255)
-        };
-
-        for (int i = 0; i < NUM_MODULE_TYPES; ++i) {
-            ImGui::BulletText("%s:", moduleNames[i]);
-            ImGui::SameLine(160);
-            int color = moduleColors[i];
-            float r = ((color >> 0) & 0xFF) / 255.0f;
-            float g = ((color >> 8) & 0xFF) / 255.0f;
-            float b = ((color >> 16) & 0xFF) / 255.0f;
-            ImGui::TextColored(ImVec4(r, g, b, 1.0f), "%d", moduleCounts[i]);
-        }
-        ImGui::Spacing();
     }
 
     if (needsRegeneration) regenerate();
@@ -705,299 +651,11 @@ void Station::renderControlsPanel() {
 void Station::renderGUI() {
     applyUIStyle();
     ImGui::SetNextWindowPos(ImVec2(20, 20), ImGuiSetCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(900, 720), ImGuiSetCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(520, 720), ImGuiSetCond_FirstUseEver);
     ImGui::Begin("Space Station Generator", nullptr);
-    ImGui::BeginChild("LeftPane", ImVec2(420, 0), true);
+
+    // Single-pane GUI: controls only (no 2D visualization)
     renderControlsPanel();
-    ImGui::EndChild();
-    ImGui::SameLine();
-    ImGui::BeginChild("RightPane", ImVec2(0, 0), true);
-    renderPreviewPanel();
-    ImGui::EndChild();
+
     ImGui::End();
-}
-
-void Station::renderPreviewPanel() {
-    ImGui::Spacing();
-    ImGui::Text("STATION LAYOUT PREVIEW");
-    ImGui::Separator();
-    ImGui::Spacing();
-
-    ImGui::Columns(3, "zoom", false);
-    if (ImGui::Button("[-] Zoom Out", ImVec2(-1, 0)))
-        m_previewZoom = glm::clamp(m_previewZoom / 1.2f, 0.2f, 8.0f);
-    ImGui::NextColumn();
-
-    if (ImGui::Button("[=] Reset", ImVec2(-1, 0))) {
-        m_previewZoom = 1.0f;
-        m_previewPan = vec2(0.0f);
-    }
-    ImGui::NextColumn();
-
-    if (ImGui::Button("[+] Zoom In", ImVec2(-1, 0)))
-        m_previewZoom = glm::clamp(m_previewZoom * 1.2f, 0.2f, 8.0f);
-    ImGui::NextColumn();
-    ImGui::Columns(1);
-
-    ImGui::Text("Zoom: %.1fx", m_previewZoom);
-    ImGui::Spacing();
-    ImGui::Separator();
-    ImGui::Spacing();
-
-    ImGui::Text("Legend:");
-    ImGui::Columns(2, "legend", false);
-
-    ImDrawList* draw_list = ImGui::GetWindowDrawList();
-    float legendLineLength = 20.0f;
-    float legendLineThickness = 4.0f;
-    float legendCircleSize = 6.0f;
-
-    const char* moduleNames[] = { "Corridor", "Habitat", "Docking Bay", "Power" };
-    for (int i = 0; i < NUM_MODULE_TYPES; ++i) {
-        ImVec2 cursor = ImGui::GetCursorScreenPos();
-        draw_list->AddLine(
-            ImVec2(cursor.x, cursor.y + legendCircleSize),
-            ImVec2(cursor.x + legendLineLength, cursor.y + legendCircleSize),
-            MODULE_COLORS[i],
-            legendLineThickness
-        );
-        ImGui::Dummy(ImVec2(legendLineLength, legendCircleSize * 2));
-        ImGui::SameLine();
-        ImGui::Text("%s Module", moduleNames[i]);
-        ImGui::NextColumn();
-    }
-
-    ImVec2 cursor = ImGui::GetCursorScreenPos();
-    draw_list->AddCircleFilled(
-        ImVec2(cursor.x + legendCircleSize, cursor.y + legendCircleSize),
-        legendCircleSize,
-        JUNCTION_COLOR
-    );
-    ImGui::Dummy(ImVec2(legendCircleSize * 2, legendCircleSize * 2));
-    ImGui::SameLine();
-    ImGui::Text("Junction");
-    ImGui::NextColumn();
-
-    cursor = ImGui::GetCursorScreenPos();
-    draw_list->AddCircleFilled(
-        ImVec2(cursor.x + legendCircleSize, cursor.y + legendCircleSize),
-        legendCircleSize,
-        VERTICAL_JUNCTION_COLOR
-    );
-    ImGui::Dummy(ImVec2(legendCircleSize * 2, legendCircleSize * 2));
-    ImGui::SameLine();
-    ImGui::Text("Vertical Junction");
-    ImGui::NextColumn();
-
-    cursor = ImGui::GetCursorScreenPos();
-    draw_list->AddRectFilled(
-        ImVec2(cursor.x, cursor.y),
-        ImVec2(cursor.x + legendCircleSize * 2, cursor.y + legendCircleSize * 2),
-        SOLAR_PANEL_COLOR
-    );
-    ImGui::Dummy(ImVec2(legendCircleSize * 2, legendCircleSize * 2));
-    ImGui::SameLine();
-    ImGui::Text("Solar Panels");
-    ImGui::NextColumn();
-
-    ImGui::Columns(1);
-    ImGui::Spacing();
-    ImGui::Separator();
-    ImGui::Spacing();
-
-    drawVisualization();
-    ImGui::Spacing();
-    ImGui::Separator();
-    ImGui::Spacing();
-
-    ImGui::TextWrapped("Tip: Use the zoom controls to explore the station layout. "
-        "Modules are rendered with proper spacing accounting for junction size (5.9 units). "
-        "Solar panels extend from modules when enabled.");
-}
-
-void Station::calculateBounds(vec2& minBounds, vec2& maxBounds) const {
-    const auto& junctions = m_lsystem.getJunctions();
-    const auto& modules = m_lsystem.getModules();
-
-    minBounds = vec2(FLT_MAX);
-    maxBounds = vec2(-FLT_MAX);
-    for (const auto& junction : junctions) {
-        minBounds = glm::min(minBounds, junction.position);
-        maxBounds = glm::max(maxBounds, junction.position);
-    }
-
-    // Account for solar panels extending beyond module bounds
-    for (const auto& module : modules) {
-        if (module.hasSolarPanels && !module.isVertical) {
-            vec2 direction = normalize(module.endPos - module.startPos);
-            vec2 perpendicular(-direction.y, direction.x);
-            vec2 extension = perpendicular * m_renderParams.solarPanelOffset;
-
-            minBounds = glm::min(minBounds, module.startPos + extension);
-            maxBounds = glm::max(maxBounds, module.startPos + extension);
-            minBounds = glm::min(minBounds, module.startPos - extension);
-            maxBounds = glm::max(maxBounds, module.startPos - extension);
-        }
-    }
-
-    vec2 padding(25.0f);
-    minBounds -= padding;
-    maxBounds += padding;
-}
-
-void Station::drawVisualization() {
-    const auto& modules = m_lsystem.getModules();
-    const auto& junctions = m_lsystem.getJunctions();
-
-    ImVec2 canvas_pos = ImGui::GetCursorScreenPos();
-    ImVec2 available = ImGui::GetContentRegionAvail();
-    ImVec2 canvas_size(
-        std::max(300.0f, available.x),
-        std::max(400.0f, available.y - 80.0f)
-    );
-
-    ImDrawList* draw_list = ImGui::GetWindowDrawList();
-    draw_list->PushClipRect(canvas_pos, ImVec2(canvas_pos.x + canvas_size.x, canvas_pos.y + canvas_size.y), true);
-
-    vec2 minBounds, maxBounds;
-    calculateBounds(minBounds, maxBounds);
-    vec2 worldSize = maxBounds - minBounds;
-
-    float fitScale = (worldSize.x > 0.0f && worldSize.y > 0.0f)
-        ? std::min(canvas_size.x / worldSize.x, canvas_size.y / worldSize.y) * 0.95f
-        : 1.0f;
-    float scale = fitScale * m_previewZoom;
-
-    vec2 offset(
-        (canvas_size.x - (worldSize.x * scale)) * 0.5f + m_previewPan.x,
-        (canvas_size.y - (worldSize.y * scale)) * 0.5f + m_previewPan.y
-    );
-
-    draw_list->AddRectFilled(
-        canvas_pos,
-        ImVec2(canvas_pos.x + canvas_size.x, canvas_pos.y + canvas_size.y),
-        IM_COL32(20, 20, 25, 255)
-    );
-    draw_list->AddRect(
-        canvas_pos,
-        ImVec2(canvas_pos.x + canvas_size.x, canvas_pos.y + canvas_size.y),
-        IM_COL32(100, 100, 120, 255),
-        0.0f,
-        0,
-        2.0f
-    );
-
-    float gridSpacing = 50.0f * scale;
-    if (gridSpacing > 10.0f) {
-        for (float x = fmod(offset.x, gridSpacing); x < canvas_size.x; x += gridSpacing) {
-            draw_list->AddLine(
-                ImVec2(canvas_pos.x + x, canvas_pos.y),
-                ImVec2(canvas_pos.x + x, canvas_pos.y + canvas_size.y),
-                IM_COL32(40, 40, 45, 255)
-            );
-        }
-        for (float y = fmod(offset.y, gridSpacing); y < canvas_size.y; y += gridSpacing) {
-            draw_list->AddLine(
-                ImVec2(canvas_pos.x, canvas_pos.y + y),
-                ImVec2(canvas_pos.x + canvas_size.x, canvas_pos.y + y),
-                IM_COL32(40, 40, 45, 255)
-            );
-        }
-    }
-
-    auto worldToScreen = [&](const vec2& worldPos) -> ImVec2 {
-        return ImVec2(
-            canvas_pos.x + offset.x + (worldPos.x - minBounds.x) * scale,
-            canvas_pos.y + offset.y + (worldPos.y - minBounds.y) * scale
-        );
-        };
-
-    float moduleLineThickness = 6.0f * glm::clamp(m_previewZoom, 0.5f, 2.0f);
-
-    // Draw modules - now properly accounting for junction spacing in visualization
-    for (const auto& module : modules) {
-        ImU32 color = (module.moduleType >= 0 && module.moduleType < NUM_MODULE_TYPES)
-            ? MODULE_COLORS[module.moduleType]
-            : IM_COL32(200, 100, 100, 255);
-
-        if (module.isVertical) {
-            ImVec2 p = worldToScreen(module.startPos);
-            float arrowSize = 8.0f * glm::clamp(m_previewZoom, 0.5f, 2.0f);
-
-            draw_list->AddLine(
-                ImVec2(p.x + 1, p.y - arrowSize + 1),
-                ImVec2(p.x + 1, p.y + arrowSize + 1),
-                IM_COL32(0, 0, 0, 80),
-                moduleLineThickness
-            );
-            draw_list->AddLine(
-                ImVec2(p.x, p.y - arrowSize),
-                ImVec2(p.x, p.y + arrowSize),
-                color,
-                moduleLineThickness
-            );
-            draw_list->AddLine(
-                ImVec2(p.x - arrowSize * 0.5f, p.y),
-                ImVec2(p.x + arrowSize * 0.5f, p.y),
-                color,
-                moduleLineThickness * 0.7f
-            );
-        }
-        else {
-            // For horizontal modules, draw line accounting for junction radius
-            vec2 direction = normalize(module.endPos - module.startPos);
-            vec2 visualStartPos = module.startPos + direction * JUNCTION_RADIUS;
-            vec2 visualEndPos = module.endPos - direction * JUNCTION_RADIUS;
-
-            ImVec2 p1 = worldToScreen(visualStartPos);
-            ImVec2 p2 = worldToScreen(visualEndPos);
-
-            draw_list->AddLine(
-                ImVec2(p1.x + 1, p1.y + 1),
-                ImVec2(p2.x + 1, p2.y + 1),
-                IM_COL32(0, 0, 0, 80),
-                moduleLineThickness
-            );
-            draw_list->AddLine(p1, p2, color, moduleLineThickness);
-        }
-    }
-
-    float junctionRadius = 4.0f * glm::clamp(m_previewZoom, 0.5f, 2.0f);
-
-    for (const auto& junction : junctions) {
-        ImVec2 center = worldToScreen(junction.position);
-        ImU32 jColor = (std::abs(junction.verticalOffset) > 0.1f)
-            ? VERTICAL_JUNCTION_COLOR
-            : JUNCTION_COLOR;
-        draw_list->AddCircleFilled(
-            ImVec2(center.x + 1, center.y + 1),
-            junctionRadius,
-            IM_COL32(0, 0, 0, 80),
-            12
-        );
-        draw_list->AddCircleFilled(center, junctionRadius, jColor, 12);
-
-        ImU32 borderColor = (std::abs(junction.verticalOffset) > 0.1f)
-            ? IM_COL32(180, 100, 50, 255)
-            : IM_COL32(80, 80, 90, 255);
-        draw_list->AddCircle(center, junctionRadius, borderColor, 12, 1.5f);
-    }
-
-    draw_list->PopClipRect();
-
-    ImGui::SetCursorScreenPos(canvas_pos);
-    ImGui::InvisibleButton("canvas", canvas_size);
-
-    if (ImGui::IsItemActive() && ImGui::IsMouseDragging(0)) {
-        ImVec2 delta = ImGui::GetIO().MouseDelta;
-        m_previewPan.x += delta.x;
-        m_previewPan.y += delta.y;
-    }
-
-    if (ImGui::IsItemHovered()) {
-        float wheel = ImGui::GetIO().MouseWheel;
-        if (wheel != 0.0f) {
-            m_previewZoom = glm::clamp(m_previewZoom * (1.0f + wheel * 0.1f), 0.2f, 8.0f);
-        }
-    }
 }

@@ -52,12 +52,8 @@ private:
     // L-System (delegated)
     LSystem m_lsystem;
 
-    // Visualization
-    float m_previewZoom = 1.0f;
-    glm::vec2 m_previewPan = glm::vec2(0.0f);
-    bool m_drawStation = false;
-
     // 3D rendering
+    bool m_drawStation = false;
     Rendering3DParams m_renderParams;
     cgra::gl_mesh m_junctionMesh;
     bool m_meshNeedsRebuild = true;
@@ -93,13 +89,9 @@ private:
     // GUI
     void applyUIStyle();
     void renderControlsPanel();
-    void renderPreviewPanel();
-    void drawVisualization();
-    void calculateBounds(glm::vec2& minBounds, glm::vec2& maxBounds) const;
 
     // 3D rendering helpers
     void rebuildMeshes();
-    glm::vec3 getModuleColor(int moduleType) const;
 
     bool m_showModelButton = false;
 };
