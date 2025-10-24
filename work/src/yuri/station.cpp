@@ -106,11 +106,11 @@ void Station::destroyModels() {
 
 void Station::initializeDefaultMaterials() {
     // Initialize with default pattern: 0,1,2,0
-    m_module1Materials = { 0, 1, 2, 0 };
-    m_module2Materials = { 0, 1, 2, 0 };
-    m_module3Materials = { 0, 1, 2, 0 };
-    m_junctionMaterials = { 0, 1, 2, 0 };
-    m_solarPanelMaterials = { 0, 1, 2, 0 };
+    m_module1Materials = { 5, 1, 2, 3 };
+    m_module2Materials = { 5, 1, 2, 3 };
+    m_module3Materials = { 5, 1, 2, 3 };
+    m_junctionMaterials = { 1, 0, 2, 4 };
+    m_solarPanelMaterials = { 4, 0, 0, 0 };
 }
 
 void Station::randomizeMaterials() {
