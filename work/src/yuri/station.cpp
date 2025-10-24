@@ -55,12 +55,21 @@ Station::Station()
     , m_junctionModel(nullptr)
     , m_solarPanelModel(nullptr)
     , m_modelsLoaded(false)
+    , m_sunAzimuth(0.0f)
+    , m_sunElevation(30.0f)
 {
     initializeLSystem();
     rebuildMeshes();
 
     // Load all module models, junction, and solar panel
     loadModuleModels();
+
+    // Initialize sun direction
+    m_renderParams.sunDirection = glm::normalize(glm::vec3(
+        cos(glm::radians(m_sunElevation)) * cos(glm::radians(m_sunAzimuth)),
+        sin(glm::radians(m_sunElevation)),
+        cos(glm::radians(m_sunElevation)) * sin(glm::radians(m_sunAzimuth))
+    ));
 }
 
 Station::~Station() {
@@ -227,6 +236,30 @@ glm::mat4 Station::calculateJunctionTransform(const ModuleJunction& junction) co
     return translate(mat4(1.0f), position);
 }
 
+float Station::calculateSolarPanelRotation(const glm::vec3& moduleAxis, const glm::vec3& panelNormal) const {
+    // Project sun direction onto the plane perpendicular to the module axis
+    glm::vec3 sunDir = glm::normalize(m_renderParams.sunDirection);
+    glm::vec3 projectedSun = sunDir - glm::dot(sunDir, moduleAxis) * moduleAxis;
+
+    // If projection is too small, sun is parallel to module axis, no rotation needed
+    if (glm::length(projectedSun) < 0.001f) {
+        return 0.0f;
+    }
+
+    projectedSun = glm::normalize(projectedSun);
+
+    // Calculate the angle between panel normal and projected sun direction
+    float dotProduct = glm::dot(panelNormal, projectedSun);
+    dotProduct = glm::clamp(dotProduct, -1.0f, 1.0f);
+
+    // Calculate cross product to determine rotation direction
+    glm::vec3 crossProduct = glm::cross(panelNormal, projectedSun);
+    float rotationSign = glm::dot(crossProduct, moduleAxis) > 0.0f ? 1.0f : -1.0f;
+
+    // Return the rotation angle
+    return rotationSign * acos(dotProduct);
+}
+
 glm::mat4 Station::calculateSolarPanelTransform(const StationModule& module, bool isLeftPanel) const {
     const auto& junctions = m_lsystem.getJunctions();
 
@@ -260,14 +293,21 @@ glm::mat4 Station::calculateSolarPanelTransform(const StationModule& module, boo
             transform = glm::rotate(transform, HALF_PI, glm::vec3(0.0f, 0.0f, 1.0f));
         }
 
+        // Module axis in world space (after vertical rotation)
+        glm::vec3 moduleAxis = pointingUp ? glm::vec3(0.0f, 1.0f, 0.0f) : glm::vec3(0.0f, -1.0f, 0.0f);
+
         // Offset perpendicular to the module axis (along local Z)
         float sideOffset = isLeftPanel ? -m_renderParams.solarPanelOffset : m_renderParams.solarPanelOffset;
         transform = glm::translate(transform, glm::vec3(0.0f, 0.0f, sideOffset));
 
-        // Rotate panels to face inward (toward the module)
-        if (isLeftPanel) {
-            transform = glm::rotate(transform, PI, glm::vec3(0.0f, 1.0f, 0.0f));
-        }
+        // Initial panel normal (facing outward from module)
+        glm::vec3 initialNormal = isLeftPanel ? glm::vec3(0.0f, 0.0f, -1.0f) : glm::vec3(0.0f, 0.0f, 1.0f);
+
+        // Calculate rotation to face sun
+        float sunRotation = calculateSolarPanelRotation(moduleAxis, initialNormal);
+
+        // Apply rotation around module axis (local X after vertical module rotation)
+        transform = glm::rotate(transform, sunRotation, glm::vec3(1.0f, 0.0f, 0.0f));
 
         return transform;
     }
@@ -288,14 +328,21 @@ glm::mat4 Station::calculateSolarPanelTransform(const StationModule& module, boo
         float angle = atan2(direction.z, direction.x);
         transform = glm::rotate(transform, angle, glm::vec3(0.0f, 1.0f, 0.0f));
 
+        // Module axis in world space (along module direction)
+        glm::vec3 moduleAxis = direction;
+
         // Offset the solar panel perpendicular to the module
         float sideOffset = isLeftPanel ? -m_renderParams.solarPanelOffset : m_renderParams.solarPanelOffset;
         transform = glm::translate(transform, glm::vec3(0.0f, 0.0f, sideOffset));
 
-        // Rotate panels to face inward (toward the module)
-        if (isLeftPanel) {
-            transform = glm::rotate(transform, PI, glm::vec3(0.0f, 1.0f, 0.0f));
-        }
+        // Initial panel normal (facing outward from module in local space)
+        glm::vec3 initialNormal = isLeftPanel ? glm::vec3(0.0f, 0.0f, -1.0f) : glm::vec3(0.0f, 0.0f, 1.0f);
+
+        // Calculate rotation to face sun
+        float sunRotation = calculateSolarPanelRotation(moduleAxis, initialNormal);
+
+        // Apply rotation around module axis (local X)
+        transform = glm::rotate(transform, sunRotation, glm::vec3(1.0f, 0.0f, 0.0f));
 
         return transform;
     }
@@ -441,6 +488,99 @@ void Station::applyUIStyle() {
     style.IndentSpacing = 20.0f;
 }
 
+void Station::renderSunDirectionWidget() {
+    ImGui::Spacing();
+    ImGui::Text("Virtual Sun Direction");
+    ImGui::Spacing();
+
+    // Create a draggable 2D widget to control sun direction
+    ImVec2 canvas_pos = ImGui::GetCursorScreenPos();
+    ImVec2 canvas_size = ImVec2(200, 200);
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+
+    // Draw background circle
+    ImVec2 center = ImVec2(canvas_pos.x + canvas_size.x * 0.5f, canvas_pos.y + canvas_size.y * 0.5f);
+    float radius = canvas_size.x * 0.45f;
+
+    draw_list->AddCircleFilled(center, radius, IM_COL32(40, 40, 50, 255));
+    draw_list->AddCircle(center, radius, IM_COL32(200, 200, 200, 255), 0, 2.0f);
+
+    // Draw cardinal directions
+    draw_list->AddLine(ImVec2(center.x, center.y - radius), ImVec2(center.x, center.y + radius),
+        IM_COL32(100, 100, 100, 255), 1.0f);
+    draw_list->AddLine(ImVec2(center.x - radius, center.y), ImVec2(center.x + radius, center.y),
+        IM_COL32(100, 100, 100, 255), 1.0f);
+
+    // Calculate sun position on the widget
+    float azimuthRad = glm::radians(m_sunAzimuth);
+    float normalizedElevation = m_sunElevation / 90.0f; // 0 to 1
+    float sunRadius = radius * (1.0f - normalizedElevation);
+
+    ImVec2 sun_pos = ImVec2(
+        center.x + sunRadius * sin(azimuthRad),
+        center.y - sunRadius * cos(azimuthRad)
+    );
+
+    // Draw sun indicator
+    float sunSize = 8.0f + normalizedElevation * 4.0f; // Larger when higher
+    ImU32 sunColor = IM_COL32(255, 220, 100, 255);
+    draw_list->AddCircleFilled(sun_pos, sunSize, sunColor);
+    draw_list->AddCircle(sun_pos, sunSize, IM_COL32(255, 255, 255, 255), 0, 2.0f);
+
+    // Make it draggable
+    ImGui::InvisibleButton("sun_widget", canvas_size);
+    if (ImGui::IsItemActive() && ImGui::IsMouseDragging(0)) {
+        ImVec2 mouse_pos = ImGui::GetMousePos();
+        float dx = mouse_pos.x - center.x;
+        float dy = mouse_pos.y - center.y;
+        float distance = sqrt(dx * dx + dy * dy);
+
+        if (distance > 0.01f) {
+            // Update azimuth (horizontal angle)
+            m_sunAzimuth = glm::degrees(atan2(dx, -dy));
+            if (m_sunAzimuth < 0.0f) m_sunAzimuth += 360.0f;
+
+            // Update elevation (vertical angle) - distance from center represents elevation
+            float normalizedDist = glm::clamp(distance / radius, 0.0f, 1.0f);
+            m_sunElevation = (1.0f - normalizedDist) * 90.0f;
+
+            // Update sun direction vector
+            m_renderParams.sunDirection = glm::normalize(glm::vec3(
+                cos(glm::radians(m_sunElevation)) * cos(glm::radians(m_sunAzimuth)),
+                sin(glm::radians(m_sunElevation)),
+                cos(glm::radians(m_sunElevation)) * sin(glm::radians(m_sunAzimuth))
+            ));
+        }
+    }
+
+    ImGui::Spacing();
+
+    // Display current angles
+    ImGui::Text("Azimuth: %.1f°", m_sunAzimuth);
+    ImGui::Text("Elevation: %.1f°", m_sunElevation);
+
+    // Sliders for precise control
+    bool changed = false;
+    if (ImGui::SliderFloat("##Azimuth", &m_sunAzimuth, 0.0f, 360.0f, "Azimuth: %.1f°")) {
+        changed = true;
+    }
+    if (ImGui::SliderFloat("##Elevation", &m_sunElevation, 0.0f, 90.0f, "Elevation: %.1f°")) {
+        changed = true;
+    }
+
+    if (changed) {
+        m_renderParams.sunDirection = glm::normalize(glm::vec3(
+            cos(glm::radians(m_sunElevation)) * cos(glm::radians(m_sunAzimuth)),
+            sin(glm::radians(m_sunElevation)),
+            cos(glm::radians(m_sunElevation)) * sin(glm::radians(m_sunAzimuth))
+        ));
+    }
+
+    ImGui::Spacing();
+    ImGui::TextWrapped("Drag the sun icon to change direction. Solar panels will rotate to face the sun along their rotation axis.");
+    ImGui::Spacing();
+}
+
 void Station::renderControlsPanel() {
     bool needsRegeneration = false;
     LSystemParams& params = m_lsystem.getParams();
@@ -515,6 +655,13 @@ void Station::renderControlsPanel() {
             }
             ImGui::PopItemWidth();
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Distance from module center to solar panels");
+
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Spacing();
+
+            // Sun direction control
+            renderSunDirectionWidget();
         }
         ImGui::Spacing();
     }

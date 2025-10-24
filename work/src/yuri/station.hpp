@@ -17,6 +17,7 @@ struct Rendering3DParams {
     float junctionRadius = 1.0f;
     float gapMultiplier = 0.0f;
     float solarPanelOffset = 2.5f; // How far from center the solar panels are positioned
+    glm::vec3 sunDirection = glm::vec3(1.0f, 0.5f, 0.0f); // Virtual sun direction for solar panel orientation
 };
 
 class Station {
@@ -67,6 +68,10 @@ private:
     std::vector<int> m_materialAssignments; // Cyclical pattern: 0,1,2,0,1,2...
     bool m_modelsLoaded = false;
 
+    // Sun direction control
+    float m_sunAzimuth = 0.0f;   // Horizontal angle
+    float m_sunElevation = 30.0f; // Vertical angle
+
     // Model loading and material assignment
     void loadModuleModels();
     void assignCyclicalMaterials();
@@ -81,6 +86,9 @@ private:
     glm::mat4 calculateJunctionTransform(const ModuleJunction& junction) const;
     glm::mat4 calculateSolarPanelTransform(const StationModule& module, bool isLeftPanel) const;
 
+    // Calculate solar panel rotation to face sun
+    float calculateSolarPanelRotation(const glm::vec3& moduleAxis, const glm::vec3& panelNormal) const;
+
     // Render a model with PBR materials
     void renderModelWithMaterials(cgra::multi_mesh_model* model, const glm::mat4& modelTransform,
         GLuint pbrShader, const glm::mat4& view, const glm::mat4& proj,
@@ -89,6 +97,7 @@ private:
     // GUI
     void applyUIStyle();
     void renderControlsPanel();
+    void renderSunDirectionWidget();
 
     // 3D rendering helpers
     void rebuildMeshes();
