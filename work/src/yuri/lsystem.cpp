@@ -1,38 +1,44 @@
 #include "lsystem.hpp"
+
+#include <glm/gtc/constants.hpp>
 #include <algorithm>
 #include <cmath>
-#include <glm/gtc/constants.hpp>
-#include <iostream>
-
-using namespace glm;
 
 namespace {
+    // Mathematical constants
     constexpr float HALF_PI = glm::half_pi<float>();
     constexpr float TWO_PI = glm::two_pi<float>();
-    constexpr float PI = glm::pi<float>();
+
+    // Physical constants
+    constexpr float JUNCTION_RADIUS = 2.95f;  // Half of 5.9 (junction size)
     constexpr int NUM_MODULE_TYPES = 4;
-    constexpr float MODEL_LENGTH = 10.0f; // One model unit
-    constexpr float JUNCTION_RADIUS = 2.95f; // Half of 5.9 (junction size)
+
+    // Length quantization thresholds
+    constexpr float LENGTH_THRESHOLD_SMALL = 15.0f;
+    constexpr float LENGTH_THRESHOLD_MEDIUM = 25.0f;
+    constexpr float LENGTH_SMALL = 10.0f;
+    constexpr float LENGTH_MEDIUM = 20.0f;
+    constexpr float LENGTH_LARGE = 30.0f;
+
+    // Overlap detection threshold
+    constexpr float JUNCTION_OVERLAP_THRESHOLD = 0.1f;
 }
 
 LSystem::LSystem() {
     initialize();
 }
 
-LSystem::~LSystem() {
-}
-
-// Initialize L-system
 void LSystem::initialize() {
     m_rng.seed(m_params.seed);
     setupRules();
     regenerate();
 }
 
-// Set up L-system rules
 void LSystem::setupRules() {
     m_rules.clear();
+    m_rules.reserve(4);
 
+    // Main branching rule
     m_rules.push_back({
         'X',
         {
@@ -45,14 +51,17 @@ void LSystem::setupRules() {
         1.0f
         });
 
+    // Forward movement (no change)
     m_rules.push_back({ 'F', { "F" }, 1.0f });
 
+    // Left branch variations
     m_rules.push_back({
         'L',
         { "F", "FF", "F[+F]", "" },
         0.8f
         });
 
+    // Right branch variations
     m_rules.push_back({
         'R',
         { "F", "FF", "F[-F]", "" },
@@ -60,22 +69,20 @@ void LSystem::setupRules() {
         });
 }
 
-// Generate new sequence
 void LSystem::regenerate() {
     m_rng.seed(m_params.seed);
     generateSequence();
     interpretSequence(m_currentSequence);
 }
 
-// Generate sequence
 void LSystem::generateSequence() {
     m_currentSequence = "X";
+
     for (int i = 0; i < m_params.iterations; ++i) {
         m_currentSequence = applyRules(m_currentSequence);
     }
 }
 
-// Apply rules to sequence
 std::string LSystem::applyRules(const std::string& current) {
     std::string result;
     result.reserve(current.size() * 2);
@@ -86,7 +93,7 @@ std::string LSystem::applyRules(const std::string& current) {
         for (const auto& rule : m_rules) {
             if (rule.symbol == c) {
                 if (getRandomFloat(0.0f, 1.0f) < rule.probability && !rule.productions.empty()) {
-                    int idx = getRandomInt(0, rule.productions.size() - 1);
+                    const int idx = getRandomInt(0, static_cast<int>(rule.productions.size()) - 1);
                     result += rule.productions[idx];
                 }
                 else {
@@ -96,59 +103,64 @@ std::string LSystem::applyRules(const std::string& current) {
                 break;
             }
         }
-        if (!ruleApplied) result += c;
+
+        if (!ruleApplied) {
+            result += c;
+        }
     }
 
     return result;
 }
 
-// Quantize length to EXACTLY 10, 20, or 30 units only
 float LSystem::quantizeLength(float length) const {
-    if (length < 15.0f) return 10.0f;      // 10 units
-    else if (length < 25.0f) return 20.0f; // 20 units
-    else return 30.0f;                      // 30 units
+    if (length < LENGTH_THRESHOLD_SMALL) {
+        return LENGTH_SMALL;
+    }
+    else if (length < LENGTH_THRESHOLD_MEDIUM) {
+        return LENGTH_MEDIUM;
+    }
+    return LENGTH_LARGE;
 }
 
-// Interpret sequence
 void LSystem::interpretSequence(const std::string& sequence) {
     m_modules.clear();
     m_junctions.clear();
     m_stateStack.clear();
 
     TurtleState state;
-    state.position = vec2(0.0f);
+    state.position = glm::vec2(0.0f);
     state.angle = 0.0f;
     state.length = m_params.baseLength;
     state.generation = 0;
     state.verticalOffset = 0.0f;
 
+    // Add initial junction
     addJunction(state.position, state.generation);
 
     for (char command : sequence) {
         switch (command) {
         case 'F': {
-            float rawLength = std::max(m_params.minLength, state.length);
-            float actualLength = quantizeLength(rawLength);
+            const float rawLength = std::max(m_params.minLength, state.length);
+            const float actualLength = quantizeLength(rawLength);
+            const glm::vec2 direction(std::cos(state.angle), std::sin(state.angle));
 
-            vec2 direction(std::cos(state.angle), std::sin(state.angle));
-
-            // Calculate the total distance to move, including junction radii on both ends
-            float totalDistance = actualLength + (2.0f * JUNCTION_RADIUS);
-            vec2 newPos = state.position + direction * totalDistance;
+            // Calculate new position including junction radii
+            const float totalDistance = actualLength + (2.0f * JUNCTION_RADIUS);
+            const glm::vec2 newPos = state.position + direction * totalDistance;
 
             if (!isOverlapping(newPos, JUNCTION_RADIUS * 2.0f)) {
-                int moduleType = getRandomInt(0, NUM_MODULE_TYPES - 1);
+                const int moduleType = getRandomInt(0, NUM_MODULE_TYPES - 1);
                 addModule(state.position, newPos, state.angle, actualLength, moduleType, state.generation);
                 addJunction(newPos, state.generation);
 
-                // Check vertical probability for EACH NEW JUNCTION independently
-                if (m_params.allowVerticalModules
-                    && getRandomFloat(0.0f, 1.0f) < m_params.verticalProbability) {
-
-                    bool pointingUp = getRandomFloat(0.0f, 1.0f) > 0.5f;
-                    float vertLength = quantizeLength(actualLength * 0.7f);
-                    int vertModuleType = getRandomInt(0, NUM_MODULE_TYPES - 1);
-                    addVerticalModule(newPos, state.verticalOffset, pointingUp, vertLength, vertModuleType, state.generation);
+                // Check for vertical module generation
+                if (m_params.allowVerticalModules &&
+                    getRandomFloat(0.0f, 1.0f) < m_params.verticalProbability) {
+                    const bool pointingUp = getRandomFloat(0.0f, 1.0f) > 0.5f;
+                    const float vertLength = quantizeLength(actualLength * 0.7f);
+                    const int vertModuleType = getRandomInt(0, NUM_MODULE_TYPES - 1);
+                    addVerticalModule(newPos, state.verticalOffset, pointingUp,
+                        vertLength, vertModuleType, state.generation);
                 }
 
                 state.position = newPos;
@@ -156,31 +168,41 @@ void LSystem::interpretSequence(const std::string& sequence) {
             }
             break;
         }
+
         case '+':
             state.angle += HALF_PI;
-            if (state.angle >= TWO_PI) state.angle -= TWO_PI;
+            if (state.angle >= TWO_PI) {
+                state.angle -= TWO_PI;
+            }
             break;
+
         case '-':
             state.angle -= HALF_PI;
-            if (state.angle < 0.0f) state.angle += TWO_PI;
+            if (state.angle < 0.0f) {
+                state.angle += TWO_PI;
+            }
             break;
+
         case '[':
             m_stateStack.push_back(state);
             break;
+
         case ']':
             if (!m_stateStack.empty()) {
                 state = m_stateStack.back();
                 m_stateStack.pop_back();
             }
             break;
+
         default:
+            // Ignore unrecognized commands (X, L, R are non-drawing symbols)
             break;
         }
     }
 }
 
-// Add module
-void LSystem::addModule(const glm::vec2& startPos, const glm::vec2& endPos, float rotation, float length, int moduleType, int generation) {
+void LSystem::addModule(const glm::vec2& startPos, const glm::vec2& endPos,
+    float rotation, float length, int moduleType, int generation) {
     StationModule module;
     module.startPos = startPos;
     module.endPos = endPos;
@@ -190,16 +212,14 @@ void LSystem::addModule(const glm::vec2& startPos, const glm::vec2& endPos, floa
     module.generation = generation;
     module.verticalOffset = 0.0f;
     module.isVertical = false;
-
-    // Determine if this module should have solar panels
     module.hasSolarPanels = m_params.enableSolarPanels &&
         (getRandomFloat(0.0f, 1.0f) < m_params.solarPanelProbability);
 
     m_modules.push_back(module);
 }
 
-// Add vertical module
-void LSystem::addVerticalModule(const glm::vec2& basePos, float baseVerticalOffset, bool pointingUp, float length, int moduleType, int generation) {
+void LSystem::addVerticalModule(const glm::vec2& basePos, float baseVerticalOffset,
+    bool pointingUp, float length, int moduleType, int generation) {
     StationModule module;
     module.startPos = basePos;
     module.endPos = basePos;
@@ -209,38 +229,28 @@ void LSystem::addVerticalModule(const glm::vec2& basePos, float baseVerticalOffs
     module.generation = generation;
     module.verticalOffset = baseVerticalOffset;
     module.isVertical = true;
-
-    // Vertical modules can also have solar panels
     module.hasSolarPanels = m_params.enableSolarPanels &&
         (getRandomFloat(0.0f, 1.0f) < m_params.solarPanelProbability);
 
-    // Account for junction radius in vertical direction
-    float totalVerticalDistance = length + (2.0f * JUNCTION_RADIUS);
-    float endVerticalOffset = pointingUp ? (baseVerticalOffset + totalVerticalDistance) : (baseVerticalOffset - totalVerticalDistance);
-    addVerticalJunction(basePos, endVerticalOffset, generation);
+    // Calculate end junction position accounting for junction radius
+    const float totalVerticalDistance = length + (2.0f * JUNCTION_RADIUS);
+    const float endVerticalOffset = pointingUp ?
+        (baseVerticalOffset + totalVerticalDistance) :
+        (baseVerticalOffset - totalVerticalDistance);
 
+    addJunction(basePos, generation, endVerticalOffset);
     m_modules.push_back(module);
 }
 
-// Add junction
-void LSystem::addJunction(const glm::vec2& position, int generation) {
+void LSystem::addJunction(const glm::vec2& position, int generation, float verticalOffset) {
+    // Check for existing junction at this position
     for (const auto& junction : m_junctions) {
-        if (length(junction.position - position) < 0.1f && std::abs(junction.verticalOffset) < 0.1f)
-            return;
+        if (glm::length(junction.position - position) < JUNCTION_OVERLAP_THRESHOLD &&
+            std::abs(junction.verticalOffset - verticalOffset) < JUNCTION_OVERLAP_THRESHOLD) {
+            return;  // Junction already exists
+        }
     }
-    ModuleJunction junction;
-    junction.position = position;
-    junction.generation = generation;
-    junction.verticalOffset = 0.0f;
-    m_junctions.push_back(junction);
-}
 
-// Add vertical junction
-void LSystem::addVerticalJunction(const glm::vec2& position, float verticalOffset, int generation) {
-    for (const auto& junction : m_junctions) {
-        if (length(junction.position - position) < 0.1f && std::abs(junction.verticalOffset - verticalOffset) < 0.1f)
-            return;
-    }
     ModuleJunction junction;
     junction.position = position;
     junction.generation = generation;
@@ -248,38 +258,20 @@ void LSystem::addVerticalJunction(const glm::vec2& position, float verticalOffse
     m_junctions.push_back(junction);
 }
 
-// Check overlap
-bool LSystem::isOverlapping(const vec2& pos, float minDist) const {
+bool LSystem::isOverlapping(const glm::vec2& pos, float minDist) const {
     for (const auto& junction : m_junctions) {
-        if (length(junction.position - pos) < minDist)
+        if (glm::length(junction.position - pos) < minDist) {
             return true;
+        }
     }
     return false;
 }
 
-// Find nearest junction
-int LSystem::findNearestJunction(const glm::vec2& position, float maxDistance) const {
-    int nearest = -1;
-    float minDist = maxDistance;
-    for (size_t i = 0; i < m_junctions.size(); ++i) {
-        if (std::abs(m_junctions[i].verticalOffset) > 0.1f)
-            continue;
-        float dist = length(m_junctions[i].position - position);
-        if (dist < minDist && dist > 0.1f) {
-            minDist = dist;
-            nearest = static_cast<int>(i);
-        }
-    }
-    return nearest;
-}
-
-// Random float
 float LSystem::getRandomFloat(float min, float max) {
     std::uniform_real_distribution<float> dist(min, max);
     return dist(m_rng);
 }
 
-// Random int
 int LSystem::getRandomInt(int min, int max) {
     std::uniform_int_distribution<int> dist(min, max);
     return dist(m_rng);
