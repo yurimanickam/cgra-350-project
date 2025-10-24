@@ -226,6 +226,10 @@ void Application::renderGUI() {
 		loadPBRShaders(CGRA_SRCDIR + std::string("//res//textures//space.hdr"));
 	}
 
+	if (ImGui::Button("Nebula Environment")) {
+		loadPBRShaders(CGRA_SRCDIR + std::string("//res//textures//nebula.hdr"));
+	}
+
 	if (ImGui::Button("Studio Environment")) {
 		loadPBRShaders(CGRA_SRCDIR + std::string("//res//textures//studio.hdr"));
 	}
