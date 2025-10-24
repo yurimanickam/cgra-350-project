@@ -4,25 +4,17 @@
 #include <algorithm>
 #include <cmath>
 
-namespace {
-    // Mathematical constants
-    constexpr float HALF_PI = glm::half_pi<float>();
-    constexpr float TWO_PI = glm::two_pi<float>();
-
-    // Physical constants
-    constexpr float JUNCTION_RADIUS = 2.95f;  // Half of 5.9 (junction size)
-    constexpr int NUM_MODULE_TYPES = 4;
-
-    // Length quantization thresholds
-    constexpr float LENGTH_THRESHOLD_SMALL = 15.0f;
-    constexpr float LENGTH_THRESHOLD_MEDIUM = 25.0f;
-    constexpr float LENGTH_SMALL = 10.0f;
-    constexpr float LENGTH_MEDIUM = 20.0f;
-    constexpr float LENGTH_LARGE = 30.0f;
-
-    // Overlap detection threshold
-    constexpr float JUNCTION_OVERLAP_THRESHOLD = 0.1f;
-}
+// math/physics constants
+constexpr float HALF_PI = glm::half_pi<float>();
+constexpr float TWO_PI = glm::two_pi<float>();
+constexpr float JUNCTION_RADIUS = 2.95f;
+constexpr int NUM_MODULE_TYPES = 4;
+constexpr float LENGTH_THRESHOLD_SMALL = 15.0f;
+constexpr float LENGTH_THRESHOLD_MEDIUM = 25.0f;
+constexpr float LENGTH_SMALL = 10.0f;
+constexpr float LENGTH_MEDIUM = 20.0f;
+constexpr float LENGTH_LARGE = 30.0f;
+constexpr float JUNCTION_OVERLAP_THRESHOLD = 0.1f;
 
 LSystem::LSystem() {
     initialize();
@@ -38,7 +30,7 @@ void LSystem::setupRules() {
     m_rules.clear();
     m_rules.reserve(4);
 
-    // Main branching rule
+    // sets up main l-system rules
     m_rules.push_back({
         'X',
         {
@@ -51,17 +43,12 @@ void LSystem::setupRules() {
         1.0f
         });
 
-    // Forward movement (no change)
     m_rules.push_back({ 'F', { "F" }, 1.0f });
-
-    // Left branch variations
     m_rules.push_back({
         'L',
         { "F", "FF", "F[+F]", "" },
         0.8f
         });
-
-    // Right branch variations
     m_rules.push_back({
         'R',
         { "F", "FF", "F[-F]", "" },
@@ -77,7 +64,6 @@ void LSystem::regenerate() {
 
 void LSystem::generateSequence() {
     m_currentSequence = "X";
-
     for (int i = 0; i < m_params.iterations; ++i) {
         m_currentSequence = applyRules(m_currentSequence);
     }
@@ -87,9 +73,9 @@ std::string LSystem::applyRules(const std::string& current) {
     std::string result;
     result.reserve(current.size() * 2);
 
+    // applies grammar rules to each symbol
     for (char c : current) {
         bool ruleApplied = false;
-
         for (const auto& rule : m_rules) {
             if (rule.symbol == c) {
                 if (getRandomFloat(0.0f, 1.0f) < rule.probability && !rule.productions.empty()) {
@@ -103,12 +89,10 @@ std::string LSystem::applyRules(const std::string& current) {
                 break;
             }
         }
-
         if (!ruleApplied) {
             result += c;
         }
     }
-
     return result;
 }
 
@@ -127,6 +111,7 @@ void LSystem::interpretSequence(const std::string& sequence) {
     m_junctions.clear();
     m_stateStack.clear();
 
+    // does turtle graphics interpretation
     TurtleState state;
     state.position = glm::vec2(0.0f);
     state.angle = 0.0f;
@@ -134,7 +119,6 @@ void LSystem::interpretSequence(const std::string& sequence) {
     state.generation = 0;
     state.verticalOffset = 0.0f;
 
-    // Add initial junction
     addJunction(state.position, state.generation);
 
     for (char command : sequence) {
@@ -143,8 +127,6 @@ void LSystem::interpretSequence(const std::string& sequence) {
             const float rawLength = std::max(m_params.minLength, state.length);
             const float actualLength = quantizeLength(rawLength);
             const glm::vec2 direction(std::cos(state.angle), std::sin(state.angle));
-
-            // Calculate new position including junction radii
             const float totalDistance = actualLength + (2.0f * JUNCTION_RADIUS);
             const glm::vec2 newPos = state.position + direction * totalDistance;
 
@@ -153,7 +135,6 @@ void LSystem::interpretSequence(const std::string& sequence) {
                 addModule(state.position, newPos, state.angle, actualLength, moduleType, state.generation);
                 addJunction(newPos, state.generation);
 
-                // Check for vertical module generation
                 if (m_params.allowVerticalModules &&
                     getRandomFloat(0.0f, 1.0f) < m_params.verticalProbability) {
                     const bool pointingUp = getRandomFloat(0.0f, 1.0f) > 0.5f;
@@ -162,40 +143,33 @@ void LSystem::interpretSequence(const std::string& sequence) {
                     addVerticalModule(newPos, state.verticalOffset, pointingUp,
                         vertLength, vertModuleType, state.generation);
                 }
-
                 state.position = newPos;
                 state.length *= m_params.lengthDecay;
             }
             break;
         }
-
         case '+':
             state.angle += HALF_PI;
             if (state.angle >= TWO_PI) {
                 state.angle -= TWO_PI;
             }
             break;
-
         case '-':
             state.angle -= HALF_PI;
             if (state.angle < 0.0f) {
                 state.angle += TWO_PI;
             }
             break;
-
         case '[':
             m_stateStack.push_back(state);
             break;
-
         case ']':
             if (!m_stateStack.empty()) {
                 state = m_stateStack.back();
                 m_stateStack.pop_back();
             }
             break;
-
         default:
-            // Ignore unrecognized commands (X, L, R are non-drawing symbols)
             break;
         }
     }
@@ -203,6 +177,7 @@ void LSystem::interpretSequence(const std::string& sequence) {
 
 void LSystem::addModule(const glm::vec2& startPos, const glm::vec2& endPos,
     float rotation, float length, int moduleType, int generation) {
+    // adds a station module
     StationModule module;
     module.startPos = startPos;
     module.endPos = endPos;
@@ -214,12 +189,12 @@ void LSystem::addModule(const glm::vec2& startPos, const glm::vec2& endPos,
     module.isVertical = false;
     module.hasSolarPanels = m_params.enableSolarPanels &&
         (getRandomFloat(0.0f, 1.0f) < m_params.solarPanelProbability);
-
     m_modules.push_back(module);
 }
 
 void LSystem::addVerticalModule(const glm::vec2& basePos, float baseVerticalOffset,
     bool pointingUp, float length, int moduleType, int generation) {
+    // adds a vertical module
     StationModule module;
     module.startPos = basePos;
     module.endPos = basePos;
@@ -232,7 +207,6 @@ void LSystem::addVerticalModule(const glm::vec2& basePos, float baseVerticalOffs
     module.hasSolarPanels = m_params.enableSolarPanels &&
         (getRandomFloat(0.0f, 1.0f) < m_params.solarPanelProbability);
 
-    // Calculate end junction position accounting for junction radius
     const float totalVerticalDistance = length + (2.0f * JUNCTION_RADIUS);
     const float endVerticalOffset = pointingUp ?
         (baseVerticalOffset + totalVerticalDistance) :
@@ -243,14 +217,13 @@ void LSystem::addVerticalModule(const glm::vec2& basePos, float baseVerticalOffs
 }
 
 void LSystem::addJunction(const glm::vec2& position, int generation, float verticalOffset) {
-    // Check for existing junction at this position
+    // adds a junction if not overlapping
     for (const auto& junction : m_junctions) {
         if (glm::length(junction.position - position) < JUNCTION_OVERLAP_THRESHOLD &&
             std::abs(junction.verticalOffset - verticalOffset) < JUNCTION_OVERLAP_THRESHOLD) {
-            return;  // Junction already exists
+            return;
         }
     }
-
     ModuleJunction junction;
     junction.position = position;
     junction.generation = generation;

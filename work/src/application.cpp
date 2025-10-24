@@ -51,7 +51,6 @@ Application::Application(GLFWwindow* window) : m_window(window) {
 		CGRA_SRCDIR + std::string("//res//shaders//lava_fragment.glsl")
 	);
 
-	m_station.initializeLSystem();
 }
 
 void Application::render() {
@@ -160,8 +159,10 @@ void Application::render() {
 	if (m_show_axis) drawAxis(view, proj);
 	glPolygonMode(GL_FRONT_AND_BACK, (m_showWireframe) ? GL_LINE : GL_FILL);
 
-	// Draw the L-System space station in 3D (junctions only, modules are rendered via renderMultiMaterialModel)
-	m_station.render3DStation(view, proj, m_default_shader);
+	// Render station with multi-material models
+	if (m_station.shouldDrawStation()) {
+		m_station.renderMultiMaterialModel(view, proj, m_pbr_shader, m_cameraPos);
+	}
 
 	// Render lava lamp
 	m_lavaLamp.renderLavaLamp(
