@@ -7,6 +7,10 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <imgui.h>
+#include <iostream>
+
+#include "yuri/objloader.hpp"
+#include "matt/pbr.hpp"
 
 using namespace glm;
 
@@ -14,6 +18,9 @@ namespace {
     constexpr float HALF_PI = glm::half_pi<float>();
     constexpr float TWO_PI = glm::two_pi<float>();
     constexpr float PI = glm::pi<float>();
+    constexpr float MODEL_LENGTH = 10.0f;
+    constexpr float JUNCTION_SIZE = 5.9f;
+    constexpr float JUNCTION_RADIUS = 2.95f; // Half of JUNCTION_SIZE
 
     // module colors for preview
     const ImU32 MODULE_COLORS[] = {
@@ -35,13 +42,233 @@ namespace {
     const ImVec4 COLOR_HOVER = ImVec4(0.26f, 0.59f, 0.98f, 0.67f);
 }
 
-// make new station
-Station::Station() {
+Station::Station()
+    : m_module1(nullptr)
+    , m_module2(nullptr)
+    , m_module3(nullptr)
+    , m_junctionModel(nullptr)
+    , m_modelsLoaded(false)
+{
     initializeLSystem();
     rebuildMeshes();
+
+    // Load all module models and junction
+    loadModuleModels();
 }
 
-// make sphere mesh
+Station::~Station() {
+    destroyModels();
+}
+
+void Station::destroyModels() {
+    if (m_module1) {
+        m_module1->destroy();
+        delete m_module1;
+        m_module1 = nullptr;
+    }
+    if (m_module2) {
+        m_module2->destroy();
+        delete m_module2;
+        m_module2 = nullptr;
+    }
+    if (m_module3) {
+        m_module3->destroy();
+        delete m_module3;
+        m_module3 = nullptr;
+    }
+    if (m_junctionModel) {
+        m_junctionModel->destroy();
+        delete m_junctionModel;
+        m_junctionModel = nullptr;
+    }
+}
+
+void Station::loadModuleModels() {
+    destroyModels();
+
+    // Load the three module sizes
+    m_module1 = new cgra::multi_mesh_model();
+    *m_module1 = cgra::load_multi_mesh_model(CGRA_SRCDIR + std::string("/res/assets/module1.obj"));
+
+    m_module2 = new cgra::multi_mesh_model();
+    *m_module2 = cgra::load_multi_mesh_model(CGRA_SRCDIR + std::string("/res/assets/module2.obj"));
+
+    m_module3 = new cgra::multi_mesh_model();
+    *m_module3 = cgra::load_multi_mesh_model(CGRA_SRCDIR + std::string("/res/assets/module3.obj"));
+
+    // Load junction model
+    m_junctionModel = new cgra::multi_mesh_model();
+    *m_junctionModel = cgra::load_multi_mesh_model(CGRA_SRCDIR + std::string("/res/assets/junction.obj"));
+
+    if (!m_module1->mesh_groups.empty() &&
+        !m_module2->mesh_groups.empty() &&
+        !m_module3->mesh_groups.empty() &&
+        !m_junctionModel->mesh_groups.empty()) {
+        m_modelsLoaded = true;
+        assignCyclicalMaterials();
+        std::cout << "Station: All module models and junction loaded successfully" << std::endl;
+    }
+    else {
+        m_modelsLoaded = false;
+        std::cout << "Station: Failed to load one or more module models" << std::endl;
+    }
+}
+
+void Station::assignCyclicalMaterials() {
+    m_materialAssignments.clear();
+
+    // Assign materials for module1
+    if (m_module1 && !m_module1->mesh_groups.empty()) {
+        for (size_t i = 0; i < m_module1->mesh_groups.size(); ++i) {
+            m_materialAssignments.push_back(i % 3);
+        }
+    }
+
+    // Same pattern for all modules and junction
+    std::cout << "Station: Assigned cyclical PBR materials (0=gold, 1=plastic, 2=cloth)" << std::endl;
+}
+
+int Station::getMaterialIndexForGroup(size_t groupIndex) const {
+    if (groupIndex < m_materialAssignments.size()) {
+        return m_materialAssignments[groupIndex];
+    }
+    return 1; // Default to plastic
+}
+
+cgra::multi_mesh_model* Station::getModelForLength(float length) const {
+    if (length <= 15.0f) return m_module1;      // 10 units
+    else if (length <= 25.0f) return m_module2; // 20 units
+    else return m_module3;                       // 30 units
+}
+
+glm::mat4 Station::calculateModuleTransform(const StationModule& module) const {
+    const auto& junctions = m_lsystem.getJunctions();
+
+    if (module.isVertical) {
+        // Find the target vertical junction
+        float endY = module.verticalOffset;
+        for (const auto& junction : junctions) {
+            if (length(junction.position - module.startPos) < 0.1f &&
+                std::abs(junction.verticalOffset - module.verticalOffset) > 0.1f) {
+                endY = junction.verticalOffset;
+                break;
+            }
+        }
+
+        bool pointingUp = endY > module.verticalOffset;
+        vec3 position(module.startPos.x, module.verticalOffset, module.startPos.y);
+
+        // Calculate center position accounting for junction radius
+        float moduleLength = module.length;
+        float centerOffset = (moduleLength / 2.0f) + JUNCTION_RADIUS;
+        position.y += pointingUp ? centerOffset : -centerOffset;
+
+        // Start with translation
+        mat4 transform = translate(mat4(1.0f), position);
+
+        // Rotate to point vertically
+        if (pointingUp) {
+            // Point up: rotate -90 around Z axis
+            transform = rotate(transform, -HALF_PI, vec3(0.0f, 0.0f, 1.0f));
+        }
+        else {
+            // Point down: rotate 90 around Z axis
+            transform = rotate(transform, HALF_PI, vec3(0.0f, 0.0f, 1.0f));
+        }
+
+        return transform;
+    }
+    else {
+        // Horizontal module
+        vec3 fromPos3D(module.startPos.x, 0.0f, module.startPos.y);
+        vec3 toPos3D(module.endPos.x, 0.0f, module.endPos.y);
+
+        // Calculate direction and center position
+        vec3 direction = normalize(toPos3D - fromPos3D);
+        float moduleLength = module.length;
+
+        // The module center is offset by: (module_length / 2) + junction_radius
+        float centerOffset = (moduleLength / 2.0f) + JUNCTION_RADIUS;
+        vec3 position = fromPos3D + direction * centerOffset;
+
+        // Start with translation
+        mat4 transform = translate(mat4(1.0f), position);
+
+        // Calculate rotation angle from direction
+        // The modules point along +X axis by default
+        float angle = atan2(direction.z, direction.x);
+
+        // Rotate around Y axis to align with direction
+        transform = rotate(transform, angle, vec3(0.0f, 1.0f, 0.0f));
+
+        return transform;
+    }
+}
+
+glm::mat4 Station::calculateJunctionTransform(const ModuleJunction& junction) const {
+    vec3 position(junction.position.x, junction.verticalOffset, junction.position.y);
+    return translate(mat4(1.0f), position);
+}
+
+void Station::renderModelWithMaterials(cgra::multi_mesh_model* model, const glm::mat4& modelTransform,
+    GLuint pbrShader, const glm::mat4& view, const glm::mat4& proj,
+    const glm::vec3& camPos) {
+    if (!model || model->mesh_groups.empty()) return;
+
+    glUseProgram(pbrShader);
+    glUniformMatrix4fv(glGetUniformLocation(pbrShader, "projection"), 1, GL_FALSE, value_ptr(proj));
+    glUniformMatrix4fv(glGetUniformLocation(pbrShader, "view"), 1, GL_FALSE, value_ptr(view));
+    glUniform3fv(glGetUniformLocation(pbrShader, "camPos"), 1, value_ptr(camPos));
+    glUniformMatrix4fv(glGetUniformLocation(pbrShader, "model"), 1, GL_FALSE, value_ptr(modelTransform));
+    glUniformMatrix3fv(glGetUniformLocation(pbrShader, "normalMatrix"), 1, GL_FALSE,
+        value_ptr(transpose(inverse(mat3(modelTransform)))));
+
+    // Render each material group with its assigned PBR material
+    for (size_t i = 0; i < model->mesh_groups.size(); ++i) {
+        int materialIndex = getMaterialIndexForGroup(i);
+
+        switch (materialIndex) {
+        case 0:
+            bindPBRTextures(gold);
+            break;
+        case 1:
+            bindPBRTextures(plastic);
+            break;
+        case 2:
+            bindPBRTextures(cloth);
+            break;
+        default:
+            bindPBRTextures(plastic);
+            break;
+        }
+
+        model->mesh_groups[i].mesh.draw();
+    }
+}
+
+void Station::renderMultiMaterialModel(const glm::mat4& view, const glm::mat4& proj,
+    GLuint pbrShader, const glm::vec3& camPos) {
+    if (!m_drawStation || !m_modelsLoaded) {
+        return;
+    }
+
+    const auto& modules = m_lsystem.getModules();
+    const auto& junctions = m_lsystem.getJunctions();
+
+    // Render all modules
+    for (const auto& module : modules) {
+        cgra::multi_mesh_model* model = getModelForLength(module.length);
+        mat4 transform = calculateModuleTransform(module);
+        renderModelWithMaterials(model, transform, pbrShader, view, proj, camPos);
+    }
+
+    // Render all junctions
+    for (const auto& junction : junctions) {
+        mat4 transform = calculateJunctionTransform(junction);
+        renderModelWithMaterials(m_junctionModel, transform, pbrShader, view, proj, camPos);
+    }
+}
+
 cgra::gl_mesh Station::createSphereMesh(float radius, int stacks, int slices) {
     using namespace cgra;
     mesh_builder builder(GL_TRIANGLES);
@@ -82,339 +309,19 @@ cgra::gl_mesh Station::createSphereMesh(float radius, int stacks, int slices) {
     return builder.build();
 }
 
-// rebuild mesh shapes
 void Station::rebuildMeshes() {
-    m_moduleMesh = createCylinderMesh(m_renderParams.moduleRadius, 1.0f, 16, false);
     m_junctionMesh = createSphereMesh(m_renderParams.junctionRadius, 16, 16);
     m_meshNeedsRebuild = false;
 }
 
-// make cylinder mesh
-cgra::gl_mesh Station::createCylinderMesh(float radius, float length, int subdivisions, bool capped) {
-    using namespace cgra;
-    mesh_builder builder(GL_TRIANGLES);
-    float halfLength = length / 2.0f;
-    float deltaTheta = TWO_PI / float(subdivisions);
-
-    for (int i = 0; i <= subdivisions; ++i) {
-        float theta = i * deltaTheta;
-        float y = radius * std::cos(theta);
-        float z = radius * std::sin(theta);
-        vec3 normal = normalize(vec3(0, y, z));
-        float u = float(i) / subdivisions;
-
-        builder.vertices.push_back({ vec3(-halfLength, y, z), normal, vec2(u, 0) });
-        builder.vertices.push_back({ vec3(+halfLength, y, z), normal, vec2(u, 1) });
-    }
-
-    for (int i = 0; i < subdivisions; ++i) {
-        int idx = i * 2;
-        builder.indices.push_back(idx);
-        builder.indices.push_back(idx + 1);
-        builder.indices.push_back(idx + 2);
-
-        builder.indices.push_back(idx + 1);
-        builder.indices.push_back(idx + 3);
-        builder.indices.push_back(idx + 2);
-    }
-
-    if (capped) {
-        auto addCap = [&](float x, vec3 normal, bool reverseWinding) {
-            int centerIdx = builder.vertices.size();
-            builder.vertices.push_back({ vec3(x, 0, 0), normal, vec2(0.5f, 0.5f) });
-
-            for (int i = 0; i <= subdivisions; ++i) {
-                float theta = i * deltaTheta;
-                float y = radius * std::cos(theta);
-                float z = radius * std::sin(theta);
-                vec2 uv(0.5f + 0.5f * std::cos(theta), 0.5f + 0.5f * std::sin(theta));
-                builder.vertices.push_back({ vec3(x, y, z), normal, uv });
-            }
-
-            for (int i = 0; i < subdivisions; ++i) {
-                if (reverseWinding) {
-                    builder.indices.push_back(centerIdx);
-                    builder.indices.push_back(centerIdx + i + 2);
-                    builder.indices.push_back(centerIdx + i + 1);
-                }
-                else {
-                    builder.indices.push_back(centerIdx);
-                    builder.indices.push_back(centerIdx + i + 1);
-                    builder.indices.push_back(centerIdx + i + 2);
-                }
-            }
-            };
-
-        addCap(-halfLength, vec3(-1, 0, 0), false);
-        addCap(+halfLength, vec3(1, 0, 0), true);
-    }
-
-    return builder.build();
-}
-
-// set up lsystem
 void Station::initializeLSystem() {
-    m_rng.seed(m_params.seed);
-    setupRules();
-    regenerate();
+    m_lsystem.initialize();
 }
 
-// set lsystem rules
-void Station::setupRules() {
-    m_rules.clear();
-
-    m_rules.push_back({
-        'X',
-        {
-            "F[+XL][-XR]FX",
-            "F[++XL][--XR]X",
-            "FF[+X]X",
-            "F[+XL]F[-XR]X",
-            "FFF[+X][-X]X"
-        },
-        1.0f
-        });
-
-    m_rules.push_back({ 'F', { "F" }, 1.0f });
-
-    m_rules.push_back({
-        'L',
-        { "F", "FF", "F[+F]", "" },
-        0.8f
-        });
-
-    m_rules.push_back({
-        'R',
-        { "F", "FF", "F[-F]", "" },
-        0.8f
-        });
-}
-
-// make new sequence
 void Station::regenerate() {
-    m_rng.seed(m_params.seed);
-    generateSequence();
-    interpretSequence(m_currentSequence);
+    m_lsystem.regenerate();
 }
 
-// generate sequence
-void Station::generateSequence() {
-    m_currentSequence = "X";
-    for (int i = 0; i < m_params.iterations; ++i) {
-        m_currentSequence = applyRules(m_currentSequence);
-    }
-}
-
-// apply rules to sequence
-std::string Station::applyRules(const std::string& current) {
-    std::string result;
-    result.reserve(current.size() * 2);
-
-    for (char c : current) {
-        bool ruleApplied = false;
-
-        for (const auto& rule : m_rules) {
-            if (rule.symbol == c) {
-                if (getRandomFloat(0.0f, 1.0f) < rule.probability && !rule.productions.empty()) {
-                    int idx = getRandomInt(0, rule.productions.size() - 1);
-                    result += rule.productions[idx];
-                }
-                else {
-                    result += c;
-                }
-                ruleApplied = true;
-                break;
-            }
-        }
-        if (!ruleApplied) result += c;
-    }
-
-    return result;
-}
-
-// interpret sequence
-void Station::interpretSequence(const std::string& sequence) {
-    m_modules.clear();
-    m_junctions.clear();
-    m_stateStack.clear();
-
-    TurtleState state;
-    state.position = vec2(0.0f);
-    state.angle = 0.0f;
-    state.length = m_params.baseLength;
-    state.generation = 0;
-    state.verticalOffset = 0.0f;
-    state.hasVerticalChild = false;
-
-    addJunction(state.position, state.generation);
-
-    for (char command : sequence) {
-        switch (command) {
-        case 'F': {
-            float actualLength = std::max(m_params.minLength, state.length);
-            vec2 direction(std::cos(state.angle), std::sin(state.angle));
-            vec2 newPos = state.position + direction * actualLength;
-
-            if (!isOverlapping(newPos, m_params.minLength * 0.5f)) {
-                int moduleType = getRandomInt(0, NUM_MODULE_TYPES - 1);
-                addModule(state.position, newPos, state.angle, actualLength, moduleType, state.generation);
-                addJunction(newPos, state.generation);
-
-                if (m_params.allowVerticalModules
-                    && !state.hasVerticalChild
-                    && getRandomFloat(0.0f, 1.0f) < m_params.verticalProbability) {
-
-                    bool pointingUp = getRandomFloat(0.0f, 1.0f) > 0.5f;
-                    float vertLength = actualLength * 0.7f;
-                    int vertModuleType = getRandomInt(0, NUM_MODULE_TYPES - 1);
-                    addVerticalModule(newPos, state.verticalOffset, pointingUp, vertLength, vertModuleType, state.generation);
-                    state.hasVerticalChild = true;
-                }
-
-                if (m_params.allowLoops
-                    && getRandomFloat(0.0f, 1.0f) < m_params.connectionProbability) {
-                    connectNearbyJunctions(newPos, state.generation);
-                }
-
-                state.position = newPos;
-                state.length *= m_params.lengthDecay;
-            }
-            break;
-        }
-        case '+':
-            state.angle += HALF_PI;
-            if (state.angle >= TWO_PI) state.angle -= TWO_PI;
-            break;
-        case '-':
-            state.angle -= HALF_PI;
-            if (state.angle < 0.0f) state.angle += TWO_PI;
-            break;
-        case '[':
-            m_stateStack.push_back(state);
-            break;
-        case ']':
-            if (!m_stateStack.empty()) {
-                state = m_stateStack.back();
-                m_stateStack.pop_back();
-            }
-            break;
-        default:
-            break;
-        }
-    }
-}
-
-// add module
-void Station::addModule(const glm::vec2& startPos, const glm::vec2& endPos, float rotation, float length, int moduleType, int generation) {
-    StationModule module;
-    module.startPos = startPos;
-    module.endPos = endPos;
-    module.rotation = rotation;
-    module.length = length;
-    module.moduleType = moduleType;
-    module.generation = generation;
-    module.verticalOffset = 0.0f;
-    module.isVertical = false;
-    m_modules.push_back(module);
-}
-
-// add vertical module
-void Station::addVerticalModule(const glm::vec2& basePos, float baseVerticalOffset, bool pointingUp, float length, int moduleType, int generation) {
-    StationModule module;
-    module.startPos = basePos;
-    module.endPos = basePos;
-    module.rotation = 0.0f;
-    module.length = length;
-    module.moduleType = moduleType;
-    module.generation = generation;
-    module.verticalOffset = baseVerticalOffset;
-    module.isVertical = true;
-
-    float endVerticalOffset = pointingUp ? (baseVerticalOffset + length) : (baseVerticalOffset - length);
-    addVerticalJunction(basePos, endVerticalOffset, generation);
-
-    m_modules.push_back(module);
-}
-
-// add junction
-void Station::addJunction(const glm::vec2& position, int generation) {
-    for (const auto& junction : m_junctions) {
-        if (length(junction.position - position) < 0.1f && std::abs(junction.verticalOffset) < 0.1f)
-            return;
-    }
-    ModuleJunction junction;
-    junction.position = position;
-    junction.generation = generation;
-    junction.verticalOffset = 0.0f;
-    m_junctions.push_back(junction);
-}
-
-// add vertical junction
-void Station::addVerticalJunction(const glm::vec2& position, float verticalOffset, int generation) {
-    for (const auto& junction : m_junctions) {
-        if (length(junction.position - position) < 0.1f && std::abs(junction.verticalOffset - verticalOffset) < 0.1f)
-            return;
-    }
-    ModuleJunction junction;
-    junction.position = position;
-    junction.generation = generation;
-    junction.verticalOffset = verticalOffset;
-    m_junctions.push_back(junction);
-}
-
-// connect nearby junctions
-void Station::connectNearbyJunctions(const glm::vec2& newJunctionPos, int generation) {
-    int nearJunction = findNearestJunction(newJunctionPos, m_params.baseLength * 2.0f);
-    if (nearJunction >= 0) {
-        const glm::vec2& targetPos = m_junctions[nearJunction].position;
-        if (length(targetPos - newJunctionPos) > 0.5f) {
-            vec2 dir = targetPos - newJunctionPos;
-            float len = length(dir);
-            float angle = std::atan2(dir.y, dir.x);
-            int moduleType = 0;
-            addModule(newJunctionPos, targetPos, angle, len, moduleType, generation);
-        }
-    }
-}
-
-// check overlap
-bool Station::isOverlapping(const vec2& pos, float minDist) const {
-    for (const auto& junction : m_junctions) {
-        if (length(junction.position - pos) < minDist)
-            return true;
-    }
-    return false;
-}
-
-// find nearest junction
-int Station::findNearestJunction(const glm::vec2& position, float maxDistance) const {
-    int nearest = -1;
-    float minDist = maxDistance;
-    for (size_t i = 0; i < m_junctions.size(); ++i) {
-        if (std::abs(m_junctions[i].verticalOffset) > 0.1f)
-            continue;
-        float dist = length(m_junctions[i].position - position);
-        if (dist < minDist && dist > 0.1f) {
-            minDist = dist;
-            nearest = static_cast<int>(i);
-        }
-    }
-    return nearest;
-}
-
-// random float
-float Station::getRandomFloat(float min, float max) {
-    std::uniform_real_distribution<float> dist(min, max);
-    return dist(m_rng);
-}
-
-// random int
-int Station::getRandomInt(int min, int max) {
-    std::uniform_int_distribution<int> dist(min, max);
-    return dist(m_rng);
-}
-
-// get module color
 glm::vec3 Station::getModuleColor(int moduleType) const {
     switch (moduleType) {
     case 0: return glm::vec3(0.8f, 0.8f, 0.8f);
@@ -425,91 +332,11 @@ glm::vec3 Station::getModuleColor(int moduleType) const {
     }
 }
 
-// get module transform
-glm::mat4 Station::calculateModuleTransform(const StationModule& module, float gapSize) const {
-    if (module.isVertical) {
-        vec3 basePos3D(module.startPos.x, module.verticalOffset, module.startPos.y);
-        float endY = module.verticalOffset;
-        for (const auto& junction : m_junctions) {
-            if (length(junction.position - module.startPos) < 0.1f &&
-                std::abs(junction.verticalOffset - module.verticalOffset) > 0.1f) {
-                endY = junction.verticalOffset;
-                break;
-            }
-        }
-        bool pointingUp = endY > module.verticalOffset;
-        float actualLength = std::max(0.1f, std::abs(endY - module.verticalOffset) - 2.0f * gapSize);
-        vec3 centerPos = basePos3D + vec3(0.0f, (pointingUp ? 1.0f : -1.0f) * (gapSize + actualLength * 0.5f), 0.0f);
-        mat4 transform = translate(mat4(1.0f), centerPos);
-        if (pointingUp) {
-            transform = rotate(transform, HALF_PI, vec3(0.0f, 0.0f, 1.0f));
-        }
-        else {
-            transform = rotate(transform, -HALF_PI, vec3(0.0f, 0.0f, 1.0f));
-        }
-        transform = scale(transform, vec3(actualLength, 1.0f, 1.0f));
-        return transform;
-    }
-    else {
-        vec3 fromPos3D(module.startPos.x, 0.0f, module.startPos.y);
-        vec3 toPos3D(module.endPos.x, 0.0f, module.endPos.y);
-        vec3 direction = toPos3D - fromPos3D;
-        float fullDistance = length(direction);
-        float actualLength = std::max(0.1f, fullDistance - 2.0f * gapSize);
-        vec3 normalizedDir = normalize(direction);
-        vec3 centerPos = fromPos3D + normalizedDir * (gapSize + actualLength * 0.5f);
-        vec3 defaultDir(1.0f, 0.0f, 0.0f);
-        mat4 transform = translate(mat4(1.0f), centerPos);
-        vec3 rotAxis = cross(defaultDir, normalizedDir);
-        float rotAxisLen = length(rotAxis);
-
-        if (rotAxisLen > 0.001f) {
-            float angle = std::acos(glm::clamp(dot(defaultDir, normalizedDir), -1.0f, 1.0f));
-            transform = rotate(transform, angle, normalize(rotAxis));
-        }
-        else if (dot(defaultDir, normalizedDir) < 0.0f) {
-            transform = rotate(transform, PI, vec3(0.0f, 1.0f, 0.0f));
-        }
-        transform = scale(transform, vec3(actualLength, 1.0f, 1.0f));
-        return transform;
-    }
-}
-
-// render station 3d view
 void Station::render3DStation(const glm::mat4& view, const glm::mat4& proj, GLuint shader) {
-    if (!m_drawStation || m_modules.empty()) return;
-    if (m_meshNeedsRebuild) rebuildMeshes();
-
-    glUseProgram(shader);
-    glUniformMatrix4fv(glGetUniformLocation(shader, "uProjectionMatrix"), 1, GL_FALSE, value_ptr(proj));
-    float gapSize = m_renderParams.junctionRadius * m_renderParams.gapMultiplier;
-
-    for (const auto& module : m_modules) {
-        mat4 modelTransform = calculateModuleTransform(module, gapSize);
-        mat4 modelView = view * modelTransform;
-        glUniformMatrix4fv(glGetUniformLocation(shader, "uModelViewMatrix"), 1, GL_FALSE, value_ptr(modelView));
-
-        vec3 color = getModuleColor(module.moduleType);
-        if (module.isVertical)
-            color = glm::min(color * 1.2f, vec3(1.0f));
-        glUniform3fv(glGetUniformLocation(shader, "uColor"), 1, value_ptr(color));
-        m_moduleMesh.draw();
-    }
-
-    for (const auto& junction : m_junctions) {
-        vec3 pos3D(junction.position.x, junction.verticalOffset, junction.position.y);
-        mat4 modelTransform = translate(mat4(1.0f), pos3D);
-        mat4 modelView = view * modelTransform;
-
-        glUniformMatrix4fv(glGetUniformLocation(shader, "uModelViewMatrix"), 1, GL_FALSE, value_ptr(modelView));
-        vec3 junctionColor = (std::abs(junction.verticalOffset) > 0.1f) ? vec3(0.9f, 0.6f, 0.4f) : vec3(0.6f, 0.6f, 0.65f);
-        glUniform3fv(glGetUniformLocation(shader, "uColor"), 1, value_ptr(junctionColor));
-
-        m_junctionMesh.draw();
-    }
+    // 3D rendering is now handled entirely by renderMultiMaterialModel
+    // This function is kept for compatibility but does nothing
 }
 
-// apply ui style
 void Station::applyUIStyle() {
     ImGuiStyle& style = ImGui::GetStyle();
     style.WindowRounding = 5.0f;
@@ -522,9 +349,9 @@ void Station::applyUIStyle() {
     style.IndentSpacing = 20.0f;
 }
 
-// render controls panel
 void Station::renderControlsPanel() {
     bool needsRegeneration = false;
+    LSystemParams& params = m_lsystem.getParams();
 
     ImGui::PushStyleColor(ImGuiCol_Header, COLOR_HEADER);
     ImGui::Spacing();
@@ -533,122 +360,111 @@ void Station::renderControlsPanel() {
     ImGui::PopStyleColor();
     ImGui::Spacing();
 
-    // generation params
+    // Generation params
     if (ImGui::CollapsingHeader("Generation Parameters", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::Spacing();
         ImGui::Text("Complexity");
         ImGui::PushItemWidth(-1);
-        needsRegeneration |= ImGui::SliderInt("##Iterations", &m_params.iterations, 1, 6);
+        needsRegeneration |= ImGui::SliderInt("##Iterations", &params.iterations, 1, 6);
         ImGui::PopItemWidth();
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Number of L-System iterations (higher = more complex station)");
         ImGui::Spacing();
         ImGui::Separator();
         ImGui::Spacing();
-        ImGui::Text("Module Sizing");
+        ImGui::Text("Module Sizing (10, 20, or 30 units)");
         ImGui::PushItemWidth(-1);
-        needsRegeneration |= ImGui::SliderFloat("##BaseLength", &m_params.baseLength, 5.0f, 30.0f, "Base: %.1f");
+        needsRegeneration |= ImGui::SliderFloat("##BaseLength", &params.baseLength, 10.0f, 30.0f, "Base: %.0f");
         ImGui::PopItemWidth();
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Initial module length");
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Initial module length (10, 20, or 30)");
         ImGui::PushItemWidth(-1);
-        needsRegeneration |= ImGui::SliderFloat("##LengthDecay", &m_params.lengthDecay, 0.5f, 1.0f, "Decay: %.2f");
+        needsRegeneration |= ImGui::SliderFloat("##LengthDecay", &params.lengthDecay, 0.5f, 1.0f, "Decay: %.2f");
         ImGui::PopItemWidth();
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("How much modules shrink each generation");
-        ImGui::PushItemWidth(-1);
-        needsRegeneration |= ImGui::SliderFloat("##MinLength", &m_params.minLength, 1.0f, 10.0f, "Minimum: %.1f");
-        ImGui::PopItemWidth();
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Smallest allowed module size");
+        ImGui::Spacing();
+        ImGui::TextWrapped("Note: Modules are quantized to 10, 20, or 30 units. Junctions (5.9 units) are placed between modules.");
         ImGui::Spacing();
     }
 
-    // topology
+    // Topology
     if (ImGui::CollapsingHeader("Topology & Connections", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::Spacing();
-        ImGui::Checkbox("Allow Loop Connections", &m_params.allowLoops);
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Enable additional connecting modules between nearby junctions to create loops");
-        if (m_params.allowLoops) {
-            ImGui::Spacing();
-            ImGui::Text("Loop Probability");
-            ImGui::PushItemWidth(-1);
-            needsRegeneration |= ImGui::SliderFloat("##ConnProb", &m_params.connectionProbability, 0.0f, 0.5f, "%.2f");
-            ImGui::PopItemWidth();
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Chance of creating an additional connecting module");
-        }
+        // REMOVED Loop Connections
+        // ImGui::Checkbox("Allow Loop Connections", &params.allowLoops);
+        // if (ImGui::IsItemHovered()) ImGui::SetTooltip("Enable additional connecting modules between nearby junctions");
+        // if (params.allowLoops) {
+        //     ImGui::Spacing();
+        //     ImGui::Text("Loop Probability");
+        //     ImGui::PushItemWidth(-1);
+        //     needsRegeneration |= ImGui::SliderFloat("##ConnProb", &params.connectionProbability, 0.0f, 0.5f, "%.2f");
+        //     ImGui::PopItemWidth();
+        //     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Chance of creating an additional connecting module");
+        // }
         ImGui::Spacing();
         ImGui::Separator();
         ImGui::Spacing();
-        needsRegeneration |= ImGui::Checkbox("Allow Vertical Modules", &m_params.allowVerticalModules);
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Enable modules that extend upward or downward (one level deep)");
-        if (m_params.allowVerticalModules) {
+        needsRegeneration |= ImGui::Checkbox("Allow Vertical Modules", &params.allowVerticalModules);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Enable modules that extend upward or downward");
+        if (params.allowVerticalModules) {
             ImGui::Spacing();
             ImGui::Text("Vertical Probability");
             ImGui::PushItemWidth(-1);
-            needsRegeneration |= ImGui::SliderFloat("##VertProb", &m_params.verticalProbability, 0.0f, 0.5f, "%.2f");
+            needsRegeneration |= ImGui::SliderFloat("##VertProb", &params.verticalProbability, 0.0f, 1.0f, "%.2f"); // RANGE INCREASED TO 1.0f
             ImGui::PopItemWidth();
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Chance of creating a vertical module (limited to one per branch)");
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Chance of creating a vertical module");
         }
         ImGui::Spacing();
     }
 
-    // 3d rendering
+    // 3D rendering
     if (ImGui::CollapsingHeader("3D Rendering", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::Spacing();
         ImGui::Checkbox("Enable 3D View", &m_drawStation);
         ImGui::Spacing();
-        ImGui::Separator();
-        ImGui::Spacing();
-        ImGui::Text("Geometry");
-        ImGui::PushItemWidth(-1);
-        if (ImGui::SliderFloat("##JunctionRadius", &m_renderParams.junctionRadius, 0.5f, 10.0f, "Junctions: %.1f")) {
-            m_meshNeedsRebuild = true;
+
+        if (m_modelsLoaded) {
+            ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "All models loaded");
         }
-        ImGui::PopItemWidth();
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Size of spherical junction connectors");
-        ImGui::PushItemWidth(-1);
-        if (ImGui::SliderFloat("##ModuleRadius", &m_renderParams.moduleRadius, 0.2f, 5.0f, "Modules: %.1f")) {
-            m_meshNeedsRebuild = true;
+        else {
+            ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "Models not loaded");
         }
-        ImGui::PopItemWidth();
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Thickness/radius of module tubes");
-        ImGui::PushItemWidth(-1);
-        ImGui::SliderFloat("##GapMult", &m_renderParams.gapMultiplier, 0.0f, 2.5f, "Gap: %.2fx");
-        ImGui::PopItemWidth();
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Space between modules and junctions");
-        ImGui::Spacing();
-        if (ImGui::Button("Reset 3D Settings", ImVec2(-1, 0))) {
-            m_renderParams.junctionRadius = 1.0f;
-            m_renderParams.moduleRadius = 1.5f;
-            m_renderParams.gapMultiplier = 0.0f;
-            m_meshNeedsRebuild = true;
-        }
+
         ImGui::Spacing();
     }
 
-    // materials
+    // Materials
     if (ImGui::CollapsingHeader("Model Materials", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::Spacing();
-        ImGui::TextWrapped("Randomize the PBR materials assigned to the multi-material model.");
+        ImGui::TextWrapped("Modules are rendered using three different sized models (10, 20, 30 units) with PBR materials. Junctions are 5.9 units.");
         ImGui::Spacing();
-        ImGui::Checkbox("Show Multi-Material Model", &m_showModelButton);
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.7f, 0.3f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.8f, 0.4f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.15f, 0.6f, 0.25f, 1.0f));
-        if (ImGui::Button("Re-assign Random Materials", ImVec2(-1, 30))) {
-            if (m_reassignMaterialsCallback) m_reassignMaterialsCallback();
+
+        if (m_modelsLoaded) {
+            ImGui::Text("Loaded models:");
+            ImGui::BulletText("module1.obj (10 units)");
+            ImGui::BulletText("module2.obj (20 units)");
+            ImGui::BulletText("module3.obj (30 units)");
+            ImGui::BulletText("junction.obj (5.9 units)");
+            ImGui::Spacing();
+            ImGui::Text("Materials cycle: 0=Gold, 1=Plastic, 2=Cloth");
         }
-        ImGui::PopStyleColor(3);
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Randomly assigns new PBR materials to all model parts");
+        else {
+            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "Models not loaded");
+        }
+
         ImGui::Spacing();
     }
 
-    // random seed
+    // Random seed
     if (ImGui::CollapsingHeader("Random Seed", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::Spacing();
         ImGui::PushItemWidth(-1);
-        needsRegeneration |= ImGui::SliderInt("##Seed", &m_params.seed, 1, 99999);
+        needsRegeneration |= ImGui::SliderInt("##Seed", &params.seed, 1, 99999);
         ImGui::PopItemWidth();
         ImGui::Spacing();
         if (ImGui::Button("New Random Seed", ImVec2(-1, 0))) {
-            m_params.seed = getRandomInt(1, 99999);
+            std::random_device rd;
+            std::mt19937 gen(rd());
+            std::uniform_int_distribution<> dis(1, 99999);
+            params.seed = dis(gen);
             needsRegeneration = true;
         }
         ImGui::Spacing();
@@ -658,36 +474,59 @@ void Station::renderControlsPanel() {
     ImGui::Separator();
     ImGui::Spacing();
 
-    ImGui::Spacing();
-    ImGui::Separator();
-    ImGui::Spacing();
-
-    // stats
+    // Stats
     if (ImGui::CollapsingHeader("Statistics", ImGuiTreeNodeFlags_DefaultOpen)) {
+        const auto& modules = m_lsystem.getModules();
+        const auto& junctions = m_lsystem.getJunctions();
+        const auto& sequence = m_lsystem.getCurrentSequence();
+
         ImGui::Spacing();
         ImGui::Columns(2, "stats", false);
         ImGui::Text("Total Modules:");
         ImGui::NextColumn();
-        ImGui::Text("%zu", m_modules.size());
+        ImGui::Text("%zu", modules.size());
         ImGui::NextColumn();
 
         int verticalCount = 0;
-        for (const auto& module : m_modules)
+        int length10Count = 0;
+        int length20Count = 0;
+        int length30Count = 0;
+
+        for (const auto& module : modules) {
             if (module.isVertical) verticalCount++;
+            if (module.length <= 15.0f) length10Count++;
+            else if (module.length <= 25.0f) length20Count++;
+            else length30Count++;
+        }
 
         ImGui::Text("Vertical Modules:");
         ImGui::NextColumn();
         ImGui::Text("%d", verticalCount);
         ImGui::NextColumn();
 
+        ImGui::Text("10-unit Modules:");
+        ImGui::NextColumn();
+        ImGui::Text("%d", length10Count);
+        ImGui::NextColumn();
+
+        ImGui::Text("20-unit Modules:");
+        ImGui::NextColumn();
+        ImGui::Text("%d", length20Count);
+        ImGui::NextColumn();
+
+        ImGui::Text("30-unit Modules:");
+        ImGui::NextColumn();
+        ImGui::Text("%d", length30Count);
+        ImGui::NextColumn();
+
         ImGui::Text("Junctions:");
         ImGui::NextColumn();
-        ImGui::Text("%zu", m_junctions.size());
+        ImGui::Text("%zu", junctions.size());
         ImGui::NextColumn();
 
         ImGui::Text("Sequence Length:");
         ImGui::NextColumn();
-        ImGui::Text("%zu", m_currentSequence.length());
+        ImGui::Text("%zu", sequence.length());
         ImGui::NextColumn();
 
         ImGui::Columns(1);
@@ -696,7 +535,7 @@ void Station::renderControlsPanel() {
         ImGui::Separator();
 
         std::vector<int> moduleCounts(NUM_MODULE_TYPES, 0);
-        for (const auto& module : m_modules)
+        for (const auto& module : modules)
             if (module.moduleType < NUM_MODULE_TYPES)
                 moduleCounts[module.moduleType]++;
 
@@ -723,7 +562,6 @@ void Station::renderControlsPanel() {
     if (needsRegeneration) regenerate();
 }
 
-// render gui
 void Station::renderGUI() {
     applyUIStyle();
     ImGui::SetNextWindowPos(ImVec2(20, 20), ImGuiSetCond_FirstUseEver);
@@ -739,7 +577,6 @@ void Station::renderGUI() {
     ImGui::End();
 }
 
-// render preview panel
 void Station::renderPreviewPanel() {
     ImGui::Spacing();
     ImGui::Text("STATION LAYOUT PREVIEW");
@@ -823,15 +660,15 @@ void Station::renderPreviewPanel() {
     ImGui::Spacing();
 
     ImGui::TextWrapped("Tip: Use the zoom controls to explore the station layout. "
-        "Colored lines represent functional modules (tubes), gray circles show horizontal junctions, "
-        "and orange circles show vertical connection points.");
+        "Modules are rendered with proper spacing accounting for junction size (5.9 units).");
 }
 
-// calc bounds
 void Station::calculateBounds(vec2& minBounds, vec2& maxBounds) const {
+    const auto& junctions = m_lsystem.getJunctions();
+
     minBounds = vec2(FLT_MAX);
     maxBounds = vec2(-FLT_MAX);
-    for (const auto& junction : m_junctions) {
+    for (const auto& junction : junctions) {
         minBounds = glm::min(minBounds, junction.position);
         maxBounds = glm::max(maxBounds, junction.position);
     }
@@ -840,8 +677,10 @@ void Station::calculateBounds(vec2& minBounds, vec2& maxBounds) const {
     maxBounds += padding;
 }
 
-// draw preview
 void Station::drawVisualization() {
+    const auto& modules = m_lsystem.getModules();
+    const auto& junctions = m_lsystem.getJunctions();
+
     ImVec2 canvas_pos = ImGui::GetCursorScreenPos();
     ImVec2 available = ImGui::GetContentRegionAvail();
     ImVec2 canvas_size(
@@ -907,7 +746,8 @@ void Station::drawVisualization() {
 
     float moduleLineThickness = 6.0f * glm::clamp(m_previewZoom, 0.5f, 2.0f);
 
-    for (const auto& module : m_modules) {
+    // Draw modules - now properly accounting for junction spacing in visualization
+    for (const auto& module : modules) {
         ImU32 color = (module.moduleType >= 0 && module.moduleType < NUM_MODULE_TYPES)
             ? MODULE_COLORS[module.moduleType]
             : IM_COL32(200, 100, 100, 255);
@@ -936,8 +776,14 @@ void Station::drawVisualization() {
             );
         }
         else {
-            ImVec2 p1 = worldToScreen(module.startPos);
-            ImVec2 p2 = worldToScreen(module.endPos);
+            // For horizontal modules, draw line accounting for junction radius
+            vec2 direction = normalize(module.endPos - module.startPos);
+            vec2 visualStartPos = module.startPos + direction * JUNCTION_RADIUS;
+            vec2 visualEndPos = module.endPos - direction * JUNCTION_RADIUS;
+
+            ImVec2 p1 = worldToScreen(visualStartPos);
+            ImVec2 p2 = worldToScreen(visualEndPos);
+
             draw_list->AddLine(
                 ImVec2(p1.x + 1, p1.y + 1),
                 ImVec2(p2.x + 1, p2.y + 1),
@@ -950,7 +796,7 @@ void Station::drawVisualization() {
 
     float junctionRadius = 4.0f * glm::clamp(m_previewZoom, 0.5f, 2.0f);
 
-    for (const auto& junction : m_junctions) {
+    for (const auto& junction : junctions) {
         ImVec2 center = worldToScreen(junction.position);
         ImU32 jColor = (std::abs(junction.verticalOffset) > 0.1f)
             ? VERTICAL_JUNCTION_COLOR

@@ -23,6 +23,9 @@ SET(sources
     	"yuri/objloader.cpp"
     	"yuri/objloader.hpp"
 
+    	"yuri/lsystem.cpp"
+    	"yuri/lsystem.hpp"
+
 	"david/lava_lamp.cpp"
 	"david/lava_lamp.hpp"
 

@@ -3,8 +3,6 @@
 #include <string>
 #include <chrono>
 #include <algorithm>
-#include <random>
-#include <map>
 
 // glm
 #include <glm/gtc/constants.hpp>
@@ -20,8 +18,6 @@
 
 #include "matt/render_utils.hpp"
 #include "matt/pbr.hpp"
-
-#include "yuri/objloader.hpp"
 
 using namespace std;
 using namespace cgra;
@@ -47,19 +43,6 @@ Application::Application(GLFWwindow* window) : m_window(window) {
 
 	m_shader = m_default_shader;
 	m_model.shader = m_shader;
-
-	m_multiModel = load_multi_mesh_model(CGRA_SRCDIR + std::string("/res/assets/OpenModule.obj"));
-
-	if (!m_multiModel.mesh_groups.empty()) {
-		m_useMultiMaterial = true;
-		assignRandomPBRMaterials();
-		std::cout << "Loaded multi-material model with " << m_multiModel.mesh_groups.size() << " material groups" << std::endl;
-	}
-	else {
-		m_useMultiMaterial = false;
-		std::cout << "Loaded single material model as fallback" << std::endl;
-	}
-
 	m_model.color = vec3(1, 0, 0);
 
 	// Initialize lava lamp using new LavaLamp API
@@ -68,63 +51,11 @@ Application::Application(GLFWwindow* window) : m_window(window) {
 		CGRA_SRCDIR + std::string("//res//shaders//lava_fragment.glsl")
 	);
 
-	float cyl_radius = 5.0f;
-	float cyl_height = 40.0f;
-	int cyl_subdiv = 48;
-	bool cyl_capped = true;
-	m_cylinderModel.shader = m_default_shader;
-	m_cylinderModel.mesh = m_station.createCylinderMesh(cyl_radius, cyl_height, cyl_subdiv, cyl_capped);
-	m_cylinderModel.color = glm::vec3(0.1f, 0.8f, 0.3f);
-	m_cylinderModel.modelTransform = glm::translate(glm::mat4(1.0f), glm::vec3(-8.0f, cyl_height / 2.0f, 0.0f));
-
 	m_station.initializeLSystem();
-
-	// Set up the callback for reassigning materials from the station GUI
-	m_station.setReassignMaterialsCallback([this]() {
-		this->assignRandomPBRMaterials();
-		});
-}
-
-void Application::assignRandomPBRMaterials() {
-	// Available material indices (corresponding to the materials in matt/pbr.hpp)
-	std::vector<int> availableMaterials = { 0, 1, 2 }; // 0=gold, 1=plastic, 2=cloth - extend as needed
-
-	std::random_device rd;
-	std::mt19937 gen(rd());
-	std::uniform_int_distribution<> distrib(0, availableMaterials.size() - 1);
-
-	// Assign random materials to each material group
-	for (const auto& group : m_multiModel.mesh_groups) {
-		int randomMaterialIndex = availableMaterials[distrib(gen)];
-		pbr_material_wrapper wrapper;
-		wrapper.material_index = randomMaterialIndex;
-		wrapper.name = group.material_name;
-
-		m_material_assignments[group.material_name] = wrapper;
-
-		std::cout << "Assigned material " << randomMaterialIndex << " to '" << group.material_name << "'" << std::endl;
-	}
-}
-
-void Application::bindPBRMaterialByIndex(int materialIndex) {
-	switch (materialIndex) {
-	case 0:
-		bindPBRTextures(gold);
-		break;
-	case 1:
-		bindPBRTextures(plastic);
-		break;
-	case 2:
-		bindPBRTextures(cloth);
-		break;
-	default:
-		bindPBRTextures(plastic); // fallback
-		break;
-	}
 }
 
 void Application::render() {
-	// retrieve the window hieght
+	// retrieve the window height
 	int width, height;
 	glfwGetFramebufferSize(m_window, &width, &height);
 	m_windowsize = vec2(width, height); // update window size
@@ -139,12 +70,10 @@ void Application::render() {
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 	// projection matrix
-	mat4 proj = perspective(1.f, float(1280) / float(700), 0.1f, 1500.0f); //keep at720p for nicer lookaround
+	mat4 proj = perspective(1.f, float(1280) / float(700), 0.1f, 1500.0f); //keep at 720p for nicer lookaround
 
 	// model matrix
 	mat4 model = glm::mat4(1.0f);
-
-	//Added wasd camera
 
 	// Update camera movement
 	updateCameraMovement(deltaTime);
@@ -161,9 +90,8 @@ void Application::render() {
 	// view matrix (lookat)
 	mat4 view = lookAt(m_cameraPos, m_cameraPos + front, up);
 
-	//end update camera
-
-	if (m_UseSkybox || m_UseSphere || (m_useMultiMaterial && m_show_model)) {
+	// Setup PBR shader if needed
+	if (m_UseSkybox || m_UseSphere || m_station.shouldDrawStation()) {
 		// pbr
 		glUseProgram(m_pbr_shader);
 		glUniformMatrix4fv(glGetUniformLocation(m_pbr_shader, "projection"), 1, GL_FALSE, value_ptr(proj));
@@ -201,6 +129,7 @@ void Application::render() {
 		glUniformMatrix3fv(glGetUniformLocation(m_pbr_shader, "normalMatrix"), 1, GL_FALSE, value_ptr(glm::transpose(glm::inverse(glm::mat3(model)))));
 		renderSphere();
 
+		// cloth
 		bindPBRTextures(cloth);
 		model = glm::mat4(1.0f);
 		model = glm::translate(model, glm::vec3(-5.5, 5.0, 0.0));
@@ -210,27 +139,9 @@ void Application::render() {
 		renderSphere();
 	}
 
-	// Draw the multi-material model with PBR materials
-	if (m_show_model && m_useMultiMaterial && !m_multiModel.mesh_groups.empty()) {
-		glUseProgram(m_pbr_shader);
-		model = glm::mat4(1.0f);
-		glUniformMatrix4fv(glGetUniformLocation(m_pbr_shader, "model"), 1, GL_FALSE, value_ptr(model));
-		glUniformMatrix3fv(glGetUniformLocation(m_pbr_shader, "normalMatrix"), 1, GL_FALSE, value_ptr(glm::transpose(glm::inverse(glm::mat3(model)))));
-
-		for (auto& group : m_multiModel.mesh_groups) {
-			// Find the assigned material for this group
-			auto it = m_material_assignments.find(group.material_name);
-			if (it != m_material_assignments.end()) {
-				bindPBRMaterialByIndex(it->second.material_index);
-			}
-			else {
-				// Fallback to plastic if no assignment found
-				bindPBRTextures(plastic);
-			}
-
-			// Draw this material group
-			group.mesh.draw();
-		}
+	// Render the multi-material model instances for station modules
+	if (m_station.shouldDrawStation()) {
+		m_station.renderMultiMaterialModel(view, proj, m_pbr_shader, m_cameraPos);
 	}
 
 	if (m_UseSkybox) {
@@ -249,7 +160,7 @@ void Application::render() {
 	if (m_show_axis) drawAxis(view, proj);
 	glPolygonMode(GL_FRONT_AND_BACK, (m_showWireframe) ? GL_LINE : GL_FILL);
 
-	// Draw the L-System space station in 3D
+	// Draw the L-System space station in 3D (junctions only, modules are rendered via renderMultiMaterialModel)
 	m_station.render3DStation(view, proj, m_default_shader);
 
 	// Render lava lamp
@@ -281,8 +192,6 @@ void Application::renderGUI() {
 	ImGui::SameLine();
 	if (ImGui::Button("Screenshot")) rgba_image::screenshot(true);
 
-
-
 	ImGui::Separator();
 	ImGui::Text("Lava Lamp Controls");
 	ImGui::Checkbox("Show Lava Lamp", &m_showLavaLamp);
@@ -293,14 +202,10 @@ void Application::renderGUI() {
 		m_lavaLamp.setHeaterTemperature(m_heaterTemp);
 	}
 
-	// Gravity is fixed now; don't expose a slider to avoid accidental changes.
-	// m_gravity is permanently -9.8 (set in initializeLavaLamp)
-
 	if (ImGui::SliderFloat("Blob Threshold", &m_threshold, 0.3f, 3.0f, "%.2f")) {
 		m_lavaLamp.setThreshold(m_threshold);
 	}
 
-	// In Application::renderGUI(), replace the Space Station section
 	ImGui::End();
 
 	ImGui::SetNextWindowPos(ImVec2(5, 360), ImGuiSetCond_Once);
@@ -328,11 +233,10 @@ void Application::renderGUI() {
 		loadPBRShaders(CGRA_SRCDIR + std::string("//res//textures//sunset.hdr"));
 	}
 
-
-	m_station.renderGUI();
-
-	m_show_model = m_station.getShowModelButton();
 	ImGui::End();
+
+	// Render Station GUI (which now includes all module rendering controls)
+	m_station.renderGUI();
 }
 
 void Application::cursorPosCallback(double xpos, double ypos) {
@@ -372,6 +276,9 @@ void Application::scrollCallback(double xoffset, double yoffset) {
 }
 
 void Application::keyCallback(int key, int scancode, int action, int mods) {
+	(void)scancode;
+	(void)mods;
+
 	// WASD + QE movement
 	bool pressed = (action == GLFW_PRESS || action == GLFW_REPEAT);
 	switch (key) {
@@ -407,6 +314,3 @@ void Application::updateCameraMovement(float deltaTime) {
 	if (m_moveUp)       m_cameraPos += up * velocity;
 	if (m_moveDown)     m_cameraPos -= up * velocity;
 }
-
-
-

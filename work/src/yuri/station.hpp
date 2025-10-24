@@ -4,81 +4,29 @@
 #include <glm/glm.hpp>
 #include <string>
 #include <vector>
-#include <random>
-#include <functional>
 
-// A Module is a functional segment of the station (rendered as a tube/cylinder)
-struct StationModule {
-    glm::vec2 startPos;      // Start position in 2D layout
-    glm::vec2 endPos;        // End position in 2D layout
-    float rotation;          // Direction angle
-    float length;            // Length of the module
-    int moduleType;          // 0=corridor, 1=habitat, 2=docking, 3=power
-    int generation;          // L-System generation level
-    float verticalOffset;    // Y-axis offset for vertical modules
-    bool isVertical;         // True if module points up/down
+#include "lsystem.hpp"
 
-    StationModule()
-        : startPos(0.0f)
-        , endPos(0.0f)
-        , rotation(0.0f)
-        , length(1.0f)
-        , moduleType(0)
-        , generation(0)
-        , verticalOffset(0.0f)
-        , isVertical(false)
-    {
-    }
-};
-
-// A Junction is a connection point between modules (rendered as a sphere)
-struct ModuleJunction {
-    glm::vec2 position;
-    int generation;
-    float verticalOffset;    // Y-axis offset for vertical junctions
-
-    ModuleJunction()
-        : position(0.0f)
-        , generation(0)
-        , verticalOffset(0.0f)
-    {
-    }
-};
-
-struct LSystemRule {
-    char symbol;
-    std::vector<std::string> productions;
-    float probability;
-};
-
-struct LSystemParams {
-    int iterations = 3;
-    float baseLength = 10.0f;
-    float baseAngle = 90.0f;
-    float lengthDecay = 0.8f;
-    float connectionProbability = 0.2f;
-    float minLength = 2.0f;
-    bool allowLoops = true;
-    bool allowVerticalModules = true;  // New parameter
-    float verticalProbability = 0.15f; // New parameter
-    int seed = 1701;
-};
+// Forward declaration for multi_mesh_model
+namespace cgra {
+    struct mesh_group;
+    struct multi_mesh_model;
+}
 
 struct Rendering3DParams {
-    float junctionRadius = 1.0f;    // Size of junction spheres
-    float moduleRadius = 1.5f;       // Radius/thickness of module tubes
-    float gapMultiplier = 0.0f;      // Gap between modules and junctions
+    float junctionRadius = 1.0f;
+    float gapMultiplier = 0.0f;
 };
 
 class Station {
 public:
     Station();
+    ~Station();
 
     // Mesh generation
-    cgra::gl_mesh createCylinderMesh(float radius, float height, int subdivisions, bool capped);
     cgra::gl_mesh createSphereMesh(float radius, int stacks, int slices);
 
-    // L-System generation
+    // L-System generation (delegates to LSystem)
     void initializeLSystem();
     void regenerate();
 
@@ -88,28 +36,20 @@ public:
     // 3D rendering
     void render3DStation(const glm::mat4& view, const glm::mat4& proj, GLuint shader);
 
-    // Accessors
-    LSystemParams& getParams() { return m_params; }
-    Rendering3DParams& getRenderParams() { return m_renderParams; }
-    const std::vector<StationModule>& getModules() const { return m_modules; }
-    const std::vector<ModuleJunction>& getJunctions() const { return m_junctions; }
-    bool shouldDrawStation() const { return m_drawStation; }
+    // Multi-material model rendering (now uses 3 different module sizes + junction)
+    void renderMultiMaterialModel(const glm::mat4& view, const glm::mat4& proj, GLuint pbrShader, const glm::vec3& camPos);
 
-    // Callback setters for model loading and material assignment
-    void setReassignMaterialsCallback(std::function<void()> callback) {
-        m_reassignMaterialsCallback = callback;
-    }
-    bool getShowModelButton() const { return m_showModelButton; }
-    void setShowModelButton(bool val) { m_showModelButton = val; }
+    // Accessors
+    LSystemParams& getParams() { return m_lsystem.getParams(); }
+    Rendering3DParams& getRenderParams() { return m_renderParams; }
+    const std::vector<StationModule>& getModules() const { return m_lsystem.getModules(); }
+    const std::vector<ModuleJunction>& getJunctions() const { return m_lsystem.getJunctions(); }
+    bool shouldDrawStation() const { return m_drawStation; }
+    bool shouldShowModel() const { return m_showModelButton; }
 
 private:
-    // L-System data
-    LSystemParams m_params;
-    std::vector<StationModule> m_modules;        // The functional modules (tubes)
-    std::vector<ModuleJunction> m_junctions;     // Connection points (spheres)
-    std::vector<LSystemRule> m_rules;
-    std::string m_currentSequence;
-    std::mt19937 m_rng;
+    // L-System (delegated)
+    LSystem m_lsystem;
 
     // Visualization
     float m_previewZoom = 1.0f;
@@ -118,42 +58,34 @@ private:
 
     // 3D rendering
     Rendering3DParams m_renderParams;
-    cgra::gl_mesh m_moduleMesh;      // Cylinder mesh for modules
-    cgra::gl_mesh m_junctionMesh;    // Sphere mesh for junctions
+    cgra::gl_mesh m_junctionMesh;
     bool m_meshNeedsRebuild = true;
 
-    // Callbacks
-    std::function<void()> m_reassignMaterialsCallback;
+    // Multi-material model data - now with 3 module sizes + junction
+    cgra::multi_mesh_model* m_module1;      // 10 units (10x5x5)
+    cgra::multi_mesh_model* m_module2;      // 20 units (20x5x5)
+    cgra::multi_mesh_model* m_module3;      // 30 units (30x5x5)
+    cgra::multi_mesh_model* m_junctionModel; // 5.9x5.9x5.9
+    std::vector<int> m_materialAssignments; // Cyclical pattern: 0,1,2,0,1,2...
+    bool m_modelsLoaded = false;
 
-    // Turtle state
-    struct TurtleState {
-        glm::vec2 position;
-        float angle;
-        float length;
-        int generation;
-        float verticalOffset;        // New field
-        bool hasVerticalChild;       // New field - tracks if this branch already spawned a vertical module
-    };
-    std::vector<TurtleState> m_stateStack;
+    // Model loading and material assignment
+    void loadModuleModels();
+    void assignCyclicalMaterials();
+    void destroyModels();
+    int getMaterialIndexForGroup(size_t groupIndex) const;
 
-    // L-System generation
-    void setupRules();
-    void generateSequence();
-    std::string applyRules(const std::string& current);
-    void interpretSequence(const std::string& sequence);
+    // Get the appropriate model based on module length
+    cgra::multi_mesh_model* getModelForLength(float length) const;
 
-    // Module management
-    void addModule(const glm::vec2& startPos, const glm::vec2& endPos, float rotation, float length, int moduleType, int generation);
-    void addJunction(const glm::vec2& position, int generation);
-    void addVerticalModule(const glm::vec2& basePos, float baseVerticalOffset, bool pointingUp, float length, int moduleType, int generation); // New method
-    void addVerticalJunction(const glm::vec2& position, float verticalOffset, int generation); // New method
-    void connectNearbyJunctions(const glm::vec2& newJunctionPos, int generation);
-    bool isOverlapping(const glm::vec2& pos, float minDist) const;
-    int findNearestJunction(const glm::vec2& position, float maxDistance) const;
+    // Calculate transforms for modules and junctions
+    glm::mat4 calculateModuleTransform(const StationModule& module) const;
+    glm::mat4 calculateJunctionTransform(const ModuleJunction& junction) const;
 
-    // Random utilities
-    float getRandomFloat(float min, float max);
-    int getRandomInt(int min, int max);
+    // Render a model with PBR materials
+    void renderModelWithMaterials(cgra::multi_mesh_model* model, const glm::mat4& modelTransform,
+        GLuint pbrShader, const glm::mat4& view, const glm::mat4& proj,
+        const glm::vec3& camPos);
 
     // GUI
     void applyUIStyle();
@@ -164,10 +96,7 @@ private:
 
     // 3D rendering helpers
     void rebuildMeshes();
-    glm::mat4 calculateModuleTransform(const StationModule& module, float gapSize) const;
     glm::vec3 getModuleColor(int moduleType) const;
 
-    bool m_showModelButton = false; // default: show model
-
-
+    bool m_showModelButton = false;
 };
