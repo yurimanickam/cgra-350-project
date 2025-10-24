@@ -51,7 +51,7 @@ namespace {
     cgra::multi_mesh_model* LoadModel(const std::string& filename) {
         const std::string basePath = CGRA_SRCDIR + std::string("/res/assets/");
         auto* model = new cgra::multi_mesh_model();
-        *model = cgra::load_multi_mesh_model(basePath + filename);
+        *model = cgra::loadMultiModel(basePath + filename);
         return model;
     }
 

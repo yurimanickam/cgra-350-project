@@ -328,7 +328,7 @@ namespace cgra {
     }
 
     // make a multi mesh model
-    multi_mesh_model OBJLoader::buildMultiMeshModel() const {
+    multi_mesh_model OBJLoader::buildMultiModel() const {
         multi_mesh_model model;
         model.material_names = m_materialNames;
         mesh_builder shared_vertex_builder;
@@ -362,10 +362,10 @@ namespace cgra {
     }
 
     // helper for loading multi mesh model
-    multi_mesh_model load_multi_mesh_model(const std::string& filename) {
+    multi_mesh_model loadMultiModel(const std::string& filename) {
         OBJLoader loader;
         if (loader.loadFromFile(filename)) {
-            return loader.buildMultiMeshModel();
+            return loader.buildMultiModel();
         }
         else {
             std::cerr << "failed to load obj: " << filename << std::endl;

@@ -108,7 +108,7 @@ namespace cgra {
         bool loadFromFile(const std::string& filename);
 
         // make the multi mesh model
-        multi_mesh_model buildMultiMeshModel() const;
+        multi_mesh_model buildMultiModel() const;
 
         // get counts
         size_t getTriangleCount() const;
@@ -120,6 +120,6 @@ namespace cgra {
     };
 
     // function for loading multi mesh model
-    multi_mesh_model load_multi_mesh_model(const std::string& filename);
+    multi_mesh_model loadMultiModel(const std::string& filename);
 
 }
